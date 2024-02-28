@@ -3,15 +3,22 @@
  * when list changes, do transfer and other op
  */
 
-import { useRef, useEffect } from 'react'
+import { useRef } from 'react'
 import { useDelta, useConditionalEffect } from 'react-delta'
 import { maxTransport, typeMap } from '../../common/constants'
-import { getLocalFileInfo, getRemoteFileInfo, getFolderFromFilePath, getFileExt } from './file-read'
+import {
+  getLocalFileInfo,
+  getRemoteFileInfo,
+  getFolderFromFilePath,
+  getFileExt,
+  checkFolderSize
+} from './file-read'
 import copy from 'json-deep-copy'
-import _ from 'lodash'
-import { nanoid as generate } from 'nanoid/non-secure'
+import { findIndex, find } from 'lodash-es'
+import generate from '../../common/uid'
 import resolve from '../../common/resolve'
 import eq from 'fast-deep-equal'
+import { createTransferProps } from './transfer-common'
 
 export default (props) => {
   const { transferList } = props
@@ -47,6 +54,8 @@ export default (props) => {
     const res = {
       ...tr,
       renameId,
+      newName,
+      oldName: base,
       toPath: resolve(path, newName)
     }
     if (action) {
@@ -67,7 +76,7 @@ export default (props) => {
     clear()
     props.modifier((old) => {
       let transferList = copy(old.transferList)
-      const index = _.findIndex(transferList, d => d.id === id)
+      const index = findIndex(transferList, d => d.id === id)
       if (index < 0) {
         return {
           transferList
@@ -79,7 +88,8 @@ export default (props) => {
         transferList.splice(index, 1)
       } else if (action === 'cancel') {
         transferList = transferList.slice(0, index)
-      } else if (action.includes('All')) {
+      }
+      if (action.includes('All')) {
         transferList = transferList.map((t, i) => {
           if (i < index) {
             return t
@@ -92,7 +102,10 @@ export default (props) => {
       }
       if (action.includes('rename')) {
         transferList[index] = rename(transferList[index])
+      } else if (action === 'skipAll') {
+        transferList.splice(index, 1)
       }
+      window.store.setTransfers(transferList)
       return {
         transferList
       }
@@ -100,19 +113,20 @@ export default (props) => {
   }
 
   function tagTransferError (id, errorMsg) {
-    const tr = _.find(transferList, d => d.id === id)
-    props.store.addTransferHistory({
+    const tr = find(transferList, d => d.id === id)
+    window.store.addTransferHistory({
       ...tr,
       host: props.host,
       error: errorMsg,
-      finishTime: +new Date()
+      finishTime: Date.now()
     })
     props.modifier(old => {
       const transferList = copy(old.transferList)
-      const index = _.findIndex(transferList, d => d.id === id)
+      const index = findIndex(transferList, d => d.id === id)
       if (index >= 0) {
         transferList.splice(index, 1)
       }
+      window.store.setTransfers(transferList)
       return {
         transferList
       }
@@ -151,13 +165,17 @@ export default (props) => {
     clear()
     props.modifier((old) => {
       const transferList = copy(old.transferList)
-      const index = _.findIndex(transferList, t => {
+      const index = findIndex(transferList, t => {
         return t.id === tr.id
       })
       if (index >= 0) {
-        transferList[index].action = 'transfer'
-        transferList[index].fromFile = fromFile
+        const up = {
+          action: 'transfer',
+          fromFile
+        }
+        Object.assign(transferList[index], up)
       }
+      window.store.setTransfers(transferList)
       return {
         transferList
       }
@@ -178,6 +196,7 @@ export default (props) => {
           fromPath: resolve(t.path, t.name),
           toPath: resolve(tr.toPath, t.name),
           id: generate(),
+          ...createTransferProps(props),
           parentId: tr.id
         }
       })
@@ -185,13 +204,14 @@ export default (props) => {
     clear()
     props.modifier((old) => {
       const transferList = copy(old.transferList)
-      const index = _.findIndex(transferList, t => {
+      const index = findIndex(transferList, t => {
         return t.id === tr.id
       })
       transferList.splice(index + 1, 0, ...list)
       if (transferList[index]) {
         transferList[index].expanded = true
       }
+      window.store.setTransfers(transferList)
       return {
         transferList
       }
@@ -230,7 +250,8 @@ export default (props) => {
       action,
       expanded,
       renameId,
-      parentId
+      parentId,
+      skipConfirm
     } = tr
     const fromFile = tr.fromFile
       ? tr.fromFile
@@ -242,12 +263,18 @@ export default (props) => {
     let toFile = false
     if (renameId || parentId) {
       toFile = false
-    } else if (fromPath === toPath) {
+    } else if (fromPath === toPath && typeFrom === typeTo) {
       toFile = true
     } else {
       toFile = await checkExist(typeTo, toPath)
     }
-    if (fromPath === toPath) {
+    if (fromFile.isDirectory) {
+      const skip = await checkFolderSize(props, fromFile)
+        .then(d => d && typeFrom !== typeTo)
+      tr.zip = skip
+      tr.skipExpand = skip
+    }
+    if (fromPath === toPath && typeFrom === typeTo) {
       return updateTransferAction({
         id,
         action: 'rename',
@@ -257,7 +284,7 @@ export default (props) => {
           fromFile
         }
       })
-    } else if (toFile && !action) {
+    } else if (toFile && !action && !skipConfirm) {
       waitForSignal(id)
       if (!onConfirm.current) {
         onConfirm.current = true
@@ -292,26 +319,5 @@ export default (props) => {
       clearTimeout(timer.current)
     }
   }, delta && delta.prev && !eq(delta.prev, delta.curr))
-  function unwatch () {
-    window.removeEventListener('message', onTransferEvent)
-  }
-  function onTransferEvent (e) {
-    const {
-      data = {}
-    } = e || {}
-    if (
-      data.type === 'add-transfer' &&
-      data.sessionId === props.sessionId
-    ) {
-      props.addTransferList(data.transfers)
-    }
-  }
-  function watchEvent () {
-    window.addEventListener('message', onTransferEvent)
-  }
-  useEffect(() => {
-    watchEvent()
-    return unwatch
-  }, [])
   return null
 }

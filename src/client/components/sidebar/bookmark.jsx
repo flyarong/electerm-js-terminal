@@ -4,7 +4,7 @@
 
 import { Component } from '../common/react-subx'
 import BookmarkSelect from './bookmark-select'
-import _ from 'lodash'
+import { pick } from 'lodash-es'
 import { ArrowsAltOutlined, EditOutlined, PlusCircleOutlined, ShrinkOutlined, PushpinOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 
@@ -23,45 +23,58 @@ export default class BookmarkPanel extends Component {
     const prps1 = {
       className: prps.className + (store.pinned ? ' pinned' : '')
     }
+    const pop1 = {
+      ...prps,
+      onClick: store.onNewSsh
+    }
+    const pop2 = {
+      ...prps,
+      onClick: store.expandBookmarks
+    }
+    const pop3 = {
+      ...prps,
+      onClick: store.collapseBookmarks
+    }
     return (
       <div
         className='sidebar-panel bookmarks-panel animate-fast'
-        {..._.pick(props, ['onMouseEnter', 'onMouseLeave'])}
+        {...pick(props, ['onMouseEnter', 'onMouseLeave'])}
       >
         <div className='pd1y pd2t pd2x'>
           <div className='fix'>
             <div className='fleft'>{c('bookmarks')}</div>
             <div className='fright'>
-              <Tooltip title={e('newSsh')}>
+              <Tooltip title={e('newBookmark')}>
                 <PlusCircleOutlined
-                  {...prps}
-                  onClick={store.onNewSsh} />
+                  {...pop1}
+                />
               </Tooltip>
               <Tooltip title={`${m('edit')} ${c('bookmarks')}`}>
                 <EditOutlined
-                  {...prps}
-                  onClick={store.onNewSsh} />
+                  {...pop1}
+                />
               </Tooltip>
               <Tooltip title={c('expandAll')}>
                 <ArrowsAltOutlined
-                  {...prps}
-                  onClick={store.expandBookmarks} />
+                  {...pop2}
+                />
               </Tooltip>
               <Tooltip title={c('collapseAll')}>
                 <ShrinkOutlined
-                  {...prps}
-                  onClick={store.collapseBookmarks} />
+                  {...pop3}
+                />
               </Tooltip>
               <Tooltip title={c('pin')}>
                 <PushpinOutlined
                   {...prps1}
-                  onClick={store.pin} />
+                  onClick={store.handlePin}
+                />
               </Tooltip>
             </div>
           </div>
         </div>
-        <div className='pd2x'>
-          <BookmarkSelect store={store} />
+        <div className='pd2l sidebar-inner'>
+          <BookmarkSelect store={store} from='sidebar' />
         </div>
       </div>
     )

@@ -6,22 +6,28 @@ const {
   Menu,
   shell
 } = require('electron')
-const { packInfo } = require('../utils/constants')
+const openNewInstance = require('./open-new-instance')
+const { packInfo } = require('../common/runtime-constants')
 
-function buildMenu (prefix) {
-  const e = prefix('menu')
-  const c = prefix('control')
-  const s = prefix('setting')
+function buildMenu () {
+  const e = global.et.prefix('menu')
+  const c = global.et.prefix('control')
+  const s = global.et.prefix('setting')
 
   const template = [
     {
       label: e('edit'),
       submenu: [
         {
-          label: c('newSsh'),
-          accelerator: 'CmdOrCtrl+N',
+          label: c('newBookmark'),
           click () {
             global.win.webContents.send('new-ssh', null)
+          }
+        },
+        {
+          label: c('newWindow'),
+          click () {
+            openNewInstance()
           }
         },
         {
@@ -90,15 +96,21 @@ function buildMenu (prefix) {
           type: 'separator'
         },
         {
-          role: 'resetzoom',
+          click () {
+            global.win.webContents.send('zoom-reset', null)
+          },
           label: e('resetzoom')
         },
         {
-          role: 'zoomin',
+          click () {
+            global.win.webContents.send('zoomin', null)
+          },
           label: e('zoomin')
         },
         {
-          role: 'zoomout',
+          click () {
+            global.win.webContents.send('zoomout', null)
+          },
           label: e('zoomout')
         },
         {

@@ -3,32 +3,22 @@
  */
 
 import { Table } from 'antd'
-import _ from 'lodash'
+import { isEmpty } from 'lodash-es'
+import colsParser from './data-cols-parser'
 
 export default function TerminalInfoDisk (props) {
   const { disks } = props
-  if (_.isEmpty(disks) || !props.isRemote) {
+  if (isEmpty(disks) || !props.isRemote) {
     return null
   }
-  const col = Object.keys(disks[0]).map((k, i) => {
-    return {
-      title: k,
-      dataIndex: k,
-      key: k,
-      sorter: (a, b) => {
-        return a[k] > b[k] ? 1 : -1
-      }
-    }
-  })
+  const col = colsParser(disks[0])
   const ps = {
     rowKey: (rec) => `${rec.mount}_${rec.filesystem}`,
     dataSource: disks,
     bordered: true,
     columns: col,
     size: 'small',
-    pagination: {
-      pageSize: 10000
-    }
+    pagination: false
   }
   return (
     <div className='terminal-info-section terminal-info-disk'>

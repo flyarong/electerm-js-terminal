@@ -1,16 +1,17 @@
 import { useEffect, useRef } from 'react'
 import { useDelta, useConditionalEffect } from 'react-delta'
 import copy from 'json-deep-copy'
-import _ from 'lodash'
-import { nanoid as generate } from 'nanoid/non-secure'
-import TransportItem from './transport-ui'
+import { findIndex, isFunction, noop } from 'lodash-es'
+import generate from '../../common/uid'
 import { typeMap, transferTypeMap } from '../../common/constants'
 import fs from '../../common/fs'
 import { transportTypes } from './transport-types'
 import format, { computeLeftTime, computePassedTime } from './transfer-speed-format'
 import { getFolderFromFilePath } from './file-read'
 import resolve from '../../common/resolve'
-import { zipCmd, unzipCmd, rmCmd } from './zip'
+import delay from '../../common/wait'
+import { zipCmd, unzipCmd, rmCmd, mvCmd, mkdirCmd } from './zip'
+import './transfer.styl'
 
 export default function transportAction (props) {
   const { transfer } = props
@@ -21,12 +22,16 @@ export default function transportAction (props) {
   function update (up) {
     props.modifier((old) => {
       const transferList = copy(old.transferList)
-      const index = _.findIndex(transferList, t => t.id === transfer.id)
+      const index = findIndex(transferList, t => t.id === transfer.id)
       if (index < 0) {
         return {
           transferList
         }
       }
+      window.store.editTransfer(
+        transferList[index].id,
+        up
+      )
       Object.assign(transferList[index], up)
       return {
         transferList
@@ -36,14 +41,15 @@ export default function transportAction (props) {
   function insert (insts) {
     props.modifier((old) => {
       const transferList = copy(old.transferList)
-      const index = _.findIndex(transferList, t => t.id === transfer.id)
+      const index = findIndex(transferList, t => t.id === transfer.id)
       transferList.splice(index, 1, ...insts)
+      window.store.setTransfers(transferList)
       return {
         transferList
       }
     })
   }
-  function onEnd () {
+  function onEnd (update = {}) {
     if (inst.current.onCancel) {
       return
     }
@@ -52,13 +58,15 @@ export default function transportAction (props) {
       next
     } = transfer
     const cb = props[typeTo + 'List']
-    const finishTime = +new Date()
+    const finishTime = Date.now()
     if (!props.config.disableTransferHistory) {
-      props.store.addTransferHistory(
+      window.store.addTransferHistory(
         {
           ...transfer,
+          ...update,
           finishTime,
           startTime: inst.current.startTime,
+          size: transfer.fromFile.size,
           speed: format(transfer.fromFile.size, inst.current.startTime),
           host: props.tab.host
         }
@@ -103,15 +111,11 @@ export default function transportAction (props) {
       const transferList = oldTrans.filter(t => {
         return t.id !== id
       })
-      if (!transferList.length) {
-        props.store.editTab(props.tab.id, {
-          isTransporting: false
-        })
-      }
+      window.store.setTransfers(transferList)
       return {
         transferList
       }
-    }, _.isFunction(callback) ? callback : _.noop)
+    }, isFunction(callback) ? callback : noop)
   }
 
   function pause () {
@@ -137,8 +141,21 @@ export default function transportAction (props) {
   }
 
   function onMessage (e) {
-    const action = _.get(e, 'data.action')
-    const ids = _.get(e, 'data.ids')
+    const action = e?.data?.action
+    const id = e?.data?.id
+    const ids = e?.data?.ids
+    if (id === transfer.id) {
+      switch (action) {
+        case transportTypes.cancelTransport:
+          cancel()
+          break
+        case transportTypes.pauseOrResumeTransfer:
+          handlePauseOrResume()
+          break
+        default:
+          break
+      }
+    }
     if (
       (ids && ids.includes(transfer.id)) ||
       (ids && ids.length === 0)
@@ -202,9 +219,11 @@ export default function transportAction (props) {
     const nTo = resolve(path, name)
     const newTrans1 = {
       ...copy(transfer),
+      toPathReal: transfer.toPath,
+      fromPathReal: transfer.fromPath,
       toPath: nTo,
       fromPath: p,
-
+      originalId: transfer.id,
       id: generate()
     }
     delete newTrans1.fromFile
@@ -217,6 +236,25 @@ export default function transportAction (props) {
     insert([newTrans1])
   }
 
+  function buildUnzipPath (transfer) {
+    const {
+      newName,
+      toPath,
+      typeTo,
+      oldName
+    } = transfer
+    const isToRemote = typeTo === typeMap.remote
+    const { path } = getFolderFromFilePath(toPath, isToRemote)
+    const np = newName
+      ? resolve(path, 'temp-' + newName)
+      : path
+    return {
+      targetPath: path,
+      path: np,
+      name: oldName
+    }
+  }
+
   async function unzipFile () {
     if (unzipping.current) {
       return false
@@ -225,17 +263,46 @@ export default function transportAction (props) {
     const {
       fromPath,
       toPath,
-      typeTo
+      typeTo,
+      newName
     } = transfer
     const isToRemote = typeTo === typeMap.remote
-    const { path } = getFolderFromFilePath(toPath, isToRemote)
+    const {
+      path,
+      name,
+      targetPath
+    } = buildUnzipPath(transfer)
     if (isToRemote) {
+      if (newName) {
+        await mkdirCmd(props.pid, props.sessionId, path)
+        await delay(1000)
+      }
       await unzipCmd(props.pid, props.sessionId, toPath, path)
+      if (newName) {
+        const mvFrom = resolve(path, name)
+        const mvTo = resolve(targetPath, newName)
+        await mvCmd(props.pid, props.sessionId, mvFrom, mvTo)
+      }
     } else {
+      if (newName) {
+        await fs.mkdir(path)
+      }
       await fs.unzipFile(toPath, path)
+      if (newName) {
+        const mvFrom = resolve(path, name)
+        const mvTo = resolve(targetPath, newName)
+        await fs.mv(mvFrom, mvTo)
+      }
     }
     await rmCmd(props.pid, props.sessionId, !isToRemote ? fromPath : toPath)
     await fs.rmrf(!isToRemote ? toPath : fromPath)
+    if (newName) {
+      if (isToRemote) {
+        await rmCmd(props.pid, props.sessionId, path)
+      } else {
+        await fs.rmrf(path)
+      }
+    }
     onEnd()
   }
 
@@ -274,9 +341,6 @@ export default function transportAction (props) {
     if (inst.current.started) {
       return
     }
-    props.store.editTab(props.tab.id, {
-      isTransporting: true
-    })
     const {
       typeFrom,
       typeTo,
@@ -289,7 +353,7 @@ export default function transportAction (props) {
       unzip,
       inited
     } = transfer
-    const t = +new Date()
+    const t = Date.now()
     update({
       startTime: t
     })
@@ -316,8 +380,8 @@ export default function transportAction (props) {
       status: 'exception',
       error: e.message
     }
-    update(up)
-    props.store.onError(e)
+    onEnd(up)
+    window.store.onError(e)
   }
   async function mkdir () {
     const {
@@ -325,7 +389,7 @@ export default function transportAction (props) {
       toPath
     } = transfer
     if (typeTo === typeMap.local) {
-      return fs.mkdirAsync(toPath)
+      return fs.mkdir(toPath)
         .catch(onError)
     }
     return props.sftp.mkdir(toPath)
@@ -344,11 +408,5 @@ export default function transportAction (props) {
   useConditionalEffect(() => {
     initTransfer()
   }, initRefExpand && initRefExpand.prev !== initRefExpand.curr && initRef.curr === true)
-  return (
-    <TransportItem
-      {...props}
-      handlePauseOrResume={handlePauseOrResume}
-      cancel={cancel}
-    />
-  )
+  return null
 }

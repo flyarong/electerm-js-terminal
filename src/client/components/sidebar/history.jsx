@@ -4,7 +4,7 @@
 
 import { Component } from '../common/react-subx'
 import ItemList from '../setting-panel/list'
-import _ from 'lodash'
+import { pick } from 'lodash-es'
 import { EditOutlined, PushpinOutlined } from '@ant-design/icons'
 import { Tooltip } from 'antd'
 
@@ -16,6 +16,12 @@ export default class HistoryPanel extends Component {
   render () {
     const { props } = this
     const { store } = props
+    const {
+      openedSideBar
+    } = store
+    if (openedSideBar !== 'history') {
+      return null
+    }
     const prps = {
       className: 'font16 mg1x mg2l pointer iblock control-icon'
     }
@@ -25,7 +31,7 @@ export default class HistoryPanel extends Component {
     return (
       <div
         className='sidebar-panel history-panel animate-fast'
-        {..._.pick(props, ['onMouseEnter', 'onMouseLeave'])}
+        {...pick(props, ['onMouseEnter', 'onMouseLeave'])}
       >
         <div className='pd1y pd2t pd2x'>
           <div className='fix'>
@@ -34,12 +40,14 @@ export default class HistoryPanel extends Component {
               <Tooltip title={`${m('edit')} ${c('history')}`}>
                 <EditOutlined
                   className='font16 mg1x mg2l pointer iblock control-icon icon-do-edit'
-                  onClick={store.onEditHistory} />
+                  onClick={store.handleEditHistory}
+                />
               </Tooltip>
               <Tooltip title={c('pin')}>
                 <PushpinOutlined
                   {...prps1}
-                  onClick={store.pin} />
+                  onClick={store.handlePin}
+                />
               </Tooltip>
             </div>
           </div>

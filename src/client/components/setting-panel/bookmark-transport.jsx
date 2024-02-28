@@ -3,22 +3,27 @@
  */
 
 import { Component } from '../common/react-subx'
-import { DownloadOutlined, UploadOutlined } from '@ant-design/icons'
+import {
+  DownloadOutlined,
+  UploadOutlined,
+  EditOutlined
+} from '@ant-design/icons'
 import { Upload, Button } from 'antd'
 import download from '../../common/download'
-import time from '../../../app/common/time'
+import time from '../../common/time'
 import copy from 'json-deep-copy'
-import _ from 'lodash'
+import { find, uniq, isEqual } from 'lodash-es'
+import { fixBookmarks } from '../../common/db-fix'
 
 const { prefix } = window
 const f = prefix('form')
 const t = prefix('terminalThemes')
+const m = prefix('menu')
 
 export default class BookmarkTransport extends Component {
-  beforeUpload = (file) => {
+  beforeUpload = async (file) => {
     const { store } = this.props
-    const txt = window.pre
-      .readFileSync(file.path).toString()
+    const txt = await window.fs.readFile(file.path)
     try {
       const content = JSON.parse(txt)
       const {
@@ -60,18 +65,18 @@ export default class BookmarkTransport extends Component {
             obj: bg
           })
         } else {
-          const bg1 = _.find(
+          const bg1 = find(
             bookmarkGroups,
             b => b.id === bg.id
           )
           const old = copy(bg1.bookmarkIds)
-          bg1.bookmarkIds = _.uniq(
+          bg1.bookmarkIds = uniq(
             [
               ...bg1.bookmarkIds,
               ...bg.bookmarkIds
             ]
           )
-          if (!_.isEqual(bg1.bookmarkIds, old)) {
+          if (!isEqual(bg1.bookmarkIds, old)) {
             updates.push({
               id: bg1.id,
               db: 'bookmarkGroups',
@@ -82,10 +87,8 @@ export default class BookmarkTransport extends Component {
           }
         }
       })
-      store.storeAssign({
-        bookmarkGroups,
-        bookmarks
-      })
+      store.setBookmarkGroups(bookmarkGroups)
+      store.setBookmarks(fixBookmarks(bookmarks))
       store.batchDbAdd(dbAdd)
       store.batchDbUpdate(updates)
     } catch (e) {
@@ -94,12 +97,10 @@ export default class BookmarkTransport extends Component {
     return false
   }
 
-  down = () => {
+  handleDownload = () => {
     const { store } = this.props
-    const {
-      bookmarkGroups,
-      bookmarks
-    } = store
+    const bookmarkGroups = store.bookmarkGroups
+    const bookmarks = store.bookmarks
     const txt = JSON.stringify({
       bookmarkGroups: copy(bookmarkGroups),
       bookmarks: copy(bookmarks)
@@ -108,12 +109,27 @@ export default class BookmarkTransport extends Component {
     download('bookmarks-' + stamp + '.json', txt)
   }
 
+  handleToggleEdit = () => {
+    this.props.store.bookmarkSelectMode = true
+  }
+
+  renderEdit () {
+    return (
+      <Button
+        icon={<EditOutlined />}
+        onClick={this.handleToggleEdit}
+        title={m('edit')}
+        key='edit-and-del'
+      />
+    )
+  }
+
   render () {
     return [
+      this.renderEdit(),
       <Button
         icon={<DownloadOutlined />}
-        onClick={this.down}
-        className='mg1x mg1t'
+        onClick={this.handleDownload}
         title={t('export')}
         key='export'
       />,
@@ -124,7 +140,6 @@ export default class BookmarkTransport extends Component {
       >
         <Button
           icon={<UploadOutlined />}
-          className='mg1t'
           title={f('importFromFile')}
         />
       </Upload>

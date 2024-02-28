@@ -2,62 +2,117 @@
  * auto run when data change
  */
 
-import createTitlte from '../common/create-title'
-import Subx from 'subx'
-import _ from 'lodash'
-import copy from 'json-deep-copy'
-import { update, dbNames } from '../common/db'
-import { debounceTime } from 'rxjs/operators'
+import createTitle from '../common/create-title'
+import { autoRun } from 'manate'
+import { update, dbNamesForWatch } from '../common/db'
+import {
+  commonActions,
+  sftpDefaultSortSettingKey,
+  checkedKeysLsKey,
+  expandedKeysLsKey,
+  localAddrBookmarkLsKey
+} from '../common/constants'
+import postMsg from '../common/post-msg'
+import * as ls from '../common/safe-local-storage'
+import { debounce, isEmpty } from 'lodash-es'
 
 export default store => {
-  // auto focus when tab change
-  Subx.autoRun(store, () => {
+  autoRun(store, () => {
     store.focus()
-    const { currentTabId, tabs } = store
-    const tab = _.find(tabs, t => t.id === currentTabId) || {}
-    const title = createTitlte(tab)
-    window.pre.runGlobalAsync('setTitle', title)
+    // store.termSearchOpen = false
+    store.termSearchMatchCount = 0
     return store.currentTabId
-  }, debounceTime(1000))
+  }, func => debounce(func, 100)).start()
 
-  Subx.autoRun(store, () => {
-    if (store.menuOpened) {
-      store.initMenuEvent()
-    } else {
-      store.onCloseMenu()
-    }
-    return store.menuOpened
-  })
+  // autoRun(store, () => {
+  //   if (store.menuOpened) {
+  //     store.initMenuEvent()
+  //   } else {
+  //     store.onCloseMenu()
+  //   }
+  //   return store.menuOpened
+  // })
 
-  Subx.autoRun(store, () => {
-    const v = copy(store.tabs).map(t => {
-      delete t.isTransporting
-      return t
-    })
-    update('sessions', v)
-    return store.tabs
-  }, debounceTime(1000))
-
-  for (const name of dbNames) {
-    Subx.autoRun(store, async () => {
-      await update(`${name}:order`, copy(store[name].map(d => d.id)))
+  // autoRun(store, () => {
+  //   const v = store.getItems('tabs').map(t => {
+  //     delete t.isTransporting
+  //     return t
+  //   })
+  //   update('sessions', v)
+  //   return store._tabs
+  // }, func => debounce(func, 100))
+  for (const name of dbNamesForWatch) {
+    autoRun(store, async () => {
+      await update(
+        `${name}:order`,
+        store.getItems(name).map(d => d.id)
+      )
       await store.updateLastDataUpdateTime()
-      return store[name]
-    }, debounceTime(500))
+      if (store.config.autoSync) {
+        await store.uploadSettingAll()
+      }
+      return store['_' + name]
+    }, func => debounce(func, 100)).start()
   }
 
-  Subx.autoRun(store, () => {
-    update('openedCategoryIds', copy(store.openedCategoryIds))
-    return store.openedCategoryIds
-  }, debounceTime(1000))
+  autoRun(store, () => {
+    if (!store.showModal) {
+      store.focus()
+    } else {
+      store.blur()
+    }
+    return store.showModal
+  }).start()
 
-  Subx.autoRun(store, () => {
-    window.pre.runGlobalAsync('saveUserConfig', copy(store.config))
-    return store.config
-  }, debounceTime(1000))
+  autoRun(store, () => {
+    if (!isEmpty(store.config)) {
+      window.pre.runGlobalAsync('saveUserConfig', store.config)
+    }
+    return store._config
+  }, func => debounce(func, 100)).start()
 
-  Subx.autoRun(store, () => {
+  autoRun(store, () => {
     store.updateLastDataUpdateTime()
     return store.config.theme
-  }, debounceTime(1000))
+  }, func => debounce(func, 100)).start()
+
+  autoRun(store, () => {
+    store.updateTabsStatus()
+    return store.fileTransfers
+  }, func => debounce(func, 100)).start()
+
+  autoRun(store, () => {
+    ls.setItemJSON(sftpDefaultSortSettingKey, store.sftpSortSetting)
+    return store._sftpSortSetting
+  }).start()
+
+  autoRun(store, () => {
+    ls.setItemJSON(expandedKeysLsKey, store.expandedKeys)
+    return store._expandedKeys
+  }).start()
+
+  autoRun(store, () => {
+    ls.setItemJSON(localAddrBookmarkLsKey, store.addressBookmarksLocal)
+    return store._addressBookmarksLocal
+  }).start()
+
+  autoRun(store, () => {
+    ls.setItemJSON(checkedKeysLsKey, store.checkedKeys)
+    return store._checkedKeys
+  }).start()
+
+  autoRun(store, () => {
+    const tabs = store.getTabs()
+    const { currentTabId } = store
+    const tab = tabs.find(t => t.id === currentTabId)
+    if (tab) {
+      const title = createTitle(tab)
+      window.pre.runGlobalAsync('setTitle', title)
+    }
+    postMsg({
+      action: commonActions.changeCurrentTabId,
+      currentTabId
+    })
+    return store.currentTabId
+  }).start()
 }

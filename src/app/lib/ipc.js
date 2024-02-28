@@ -5,29 +5,42 @@
 const {
   ipcMain,
   app,
+  BrowserWindow,
+  dialog,
   powerMonitor,
-  globalShortcut
+  globalShortcut,
+  shell
 } = require('electron')
+const ipcSyncFuncs = require('./ipc-sync')
 const { dbAction } = require('./nedb')
+const { listItermThemes } = require('./iterm-theme')
 const installSrc = require('./install-src')
 const { getConfig } = require('./get-config')
 const loadSshConfig = require('./ssh-config')
 const {
-  toCss,
-  clearCssCache
+  setPassword,
+  checkPassword
+} = require('./auth')
+const {
+  toCss
 } = require('./style')
 const initServer = require('./init-server')
 const {
   getLang,
   loadLocales
 } = require('./locales')
+const openNewInstance = require('./open-new-instance')
 const { saveUserConfig } = require('./user-config-controller')
 const { changeHotkeyReg, initShortCut } = require('./shortcut')
 const lastStateManager = require('./last-state')
 const {
   packInfo,
-  appPath
-} = require('../utils/app-props')
+  appPath,
+  isMac,
+  exePath,
+  isPortable,
+  sshKeysPath
+} = require('../common/app-props')
 const {
   getScreenSize,
   maximize,
@@ -35,15 +48,14 @@ const {
 } = require('./window-control')
 const { loadFontList } = require('./font-list')
 const { checkDbUpgrade, doUpgrade } = require('../upgrade')
-// const { listSerialPorts } = require('./serial-port')
+const { listSerialPorts } = require('./serial-port')
 const initApp = require('./init-app')
 const { encryptAsync, decryptAsync } = require('./enc')
 const { initCommandLine } = require('./command-line')
+const { watchFile, unwatchFile } = require('./watch-file')
+const lookup = require('../common/lookup')
 
 function initIpc () {
-  global.win.on('move', () => {
-    global.win.webContents.send('window-move', null)
-  })
   powerMonitor.on('resume', () => {
     global.win.webContents.send('power-resume', null)
   })
@@ -56,58 +68,53 @@ function initIpc () {
       langMap,
       sysLocale
     } = await loadLocales()
-    const language = getLang(config, sysLocale)
+    const language = getLang(config, sysLocale, langs)
     config.language = language
     if (!global.et.serverInited) {
-      await initServer(config, {
+      const child = await initServer(config, {
         ...process.env,
-        appPath
+        appPath,
+        sshKeysPath
       }, sysLocale)
+      child.on('message', (m) => {
+        if (m && m.showFileInFolder) {
+          if (!isMac) {
+            shell.showItemInFolder(m.showFileInFolder)
+          }
+        }
+      })
       global.et.serverInited = true
     }
-    const lang = langMap[language].lang
-    const sshConfigItems = await loadSshConfig()
     global.et.config = config
     const globs = {
-      _config: config,
+      config,
       langs,
-      lang,
+      langMap,
       installSrc,
-      sshConfigItems,
-      appPath
+      appPath,
+      exePath,
+      isPortable
     }
-    initApp(language, lang, config)
+    initApp(langMap, config)
     initShortCut(globalShortcut, global.win, config)
     return globs
   }
-  const isMaximized = () => {
-    const {
-      width: widthMax,
-      height: heightMax,
-      x: sx,
-      y: sy
-    } = getScreenSize()
-    const { width, height, x, y } = global.win.getBounds()
-    return widthMax === width &&
-      heightMax === height &&
-      x === sx &&
-      y === sy
-  }
-  const syncFuncs = {
-    isMaximized
-  }
+
   ipcMain.on('sync-func', (event, { name, args }) => {
-    event.returnValue = syncFuncs[name](...args)
+    event.returnValue = ipcSyncFuncs[name](...args)
   })
   const asyncGlobals = {
+    setPassword,
+    checkPassword,
+    lookup,
+    loadSshConfig,
+    openNewInstance,
     init,
-    // listSerialPorts,
+    listSerialPorts,
     toCss,
-    clearCssCache,
     loadFontList,
     doUpgrade,
     checkDbUpgrade,
-    isMaximized,
     getExitStatus: () => global.et.exitStatus,
     setExitStatus: (status) => {
       global.et.exitStatus = status
@@ -117,7 +124,7 @@ function initIpc () {
     dbAction,
     getScreenSize,
     closeApp: () => {
-      global.win.close()
+      global.win && global.win.close()
     },
     restart: () => {
       global.win.close()
@@ -126,24 +133,30 @@ function initIpc () {
     minimize: () => {
       global.win.minimize()
     },
+    listItermThemes,
     maximize,
     unmaximize,
     openDevTools: () => {
       global.win.webContents.openDevTools()
     },
-    lastStateManager,
     setWindowSize: (update) => {
       lastStateManager.set('windowSize', update)
     },
     saveUserConfig,
     setTitle: (title) => {
-      global.win.setTitle(packInfo.name + ' - ' + title)
+      global.win && global.win.setTitle(packInfo.name + ' - ' + title)
     },
     changeHotkey: changeHotkeyReg(globalShortcut, global.win),
-    initCommandLine
+    initCommandLine,
+    watchFile,
+    unwatchFile
   }
   ipcMain.handle('async', (event, { name, args }) => {
     return asyncGlobals[name](...args)
+  })
+  ipcMain.handle('show-open-dialog-sync', async (event, ...args) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    return dialog.showOpenDialogSync(win, ...args)
   })
 }
 

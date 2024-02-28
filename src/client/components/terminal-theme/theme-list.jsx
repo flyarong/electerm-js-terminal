@@ -3,8 +3,8 @@
  */
 
 import List from '../setting-panel/list'
-import { CheckCircleOutlined, PlusOutlined } from '@ant-design/icons'
-import { Tooltip } from 'antd'
+import { CheckCircleOutlined, PlusOutlined, LoadingOutlined } from '@ant-design/icons'
+import { Tooltip, Pagination } from 'antd'
 import classnames from 'classnames'
 import { defaultTheme } from '../../common/constants'
 import highlight from '../common/highlight'
@@ -19,6 +19,14 @@ export default class ThemeList extends List {
     this.props.store.delTheme(item)
   }
 
+  handlePager = page => {
+    this.setState({ page })
+  }
+
+  handlePageSizeChange = (page, pageSize) => {
+    this.setState({ pageSize, page })
+  }
+
   renderApplyBtn = item => {
     if (!item.id) {
       return null
@@ -30,7 +38,8 @@ export default class ThemeList extends List {
       >
         <CheckCircleOutlined
           className='pointer list-item-apply'
-          onClick={() => this.props.store.setTheme(item.id)} />
+          onClick={() => this.props.store.setTheme(item.id)}
+        />
       </Tooltip>
     )
   }
@@ -65,19 +74,14 @@ export default class ThemeList extends List {
         className={cls}
         onClick={() => this.onClickTheme(item)}
       >
-        <Tooltip
-          title={name}
-          placement='topLeft'
-        >
-          <div className='elli pd1y pd2x'>
-            {
-              !id
-                ? <PlusOutlined className='mg1r' />
-                : null
-            }
-            {title}
-          </div>
-        </Tooltip>
+        <div className='elli pd1y pd2x' title={name}>
+          {
+            !id
+              ? <PlusOutlined className='mg1r' />
+              : null
+          }
+          {title}
+        </div>
         {
           id === defaultTheme.id
             ? null
@@ -89,11 +93,59 @@ export default class ThemeList extends List {
   }
 
   filter = list => {
-    const { keyword } = this.state
+    const { keyword, ready } = this.state
     return keyword
-      ? list.filter(item => {
+      ? list.slice(0, ready ? list.length : 2).filter(item => {
         return item.name.toLowerCase().includes(keyword.toLowerCase())
       })
-      : list
+      : list.slice(0, ready ? list.length : 2)
+  }
+
+  paged = list => {
+    const { pageSize, ready, page } = this.state
+    if (!ready) {
+      return list
+    }
+    return list.slice((page - 1) * pageSize, pageSize * page)
+  }
+
+  render () {
+    const { ready, page, pageSize } = this.state
+    let {
+      list = [],
+      type,
+      listStyle = {}
+    } = this.props
+    list = this.filter(list)
+    const all = list.length
+    list = this.paged(this.filter(list))
+    return (
+      <div className={`item-list item-type-${type}`}>
+        {this.renderTransport ? this.renderTransport() : null}
+        {this.renderLabels ? this.renderLabels() : null}
+        {this.renderSearch()}
+        <div className='item-list-wrap' style={listStyle}>
+          {
+            list.map(this.renderItem)
+          }
+        </div>
+        <Pagination
+          onChange={this.handlePager}
+          total={all}
+          current={page}
+          pageSize={pageSize}
+          onShowSizeChange={this.handlePageSizeChange}
+        />
+        {
+          ready
+            ? null
+            : (
+              <div className='pd3 aligncenter'>
+                <LoadingOutlined />
+              </div>
+              )
+        }
+      </div>
+    )
   }
 }

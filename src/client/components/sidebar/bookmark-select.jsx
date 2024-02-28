@@ -3,65 +3,46 @@
  */
 
 import { Component } from '../common/react-subx'
-import ItemList from '../setting-panel/list'
 import TreeList from '../setting-panel/tree-list'
-import {
-  sshConfigItems
-} from '../../common/constants'
 
 export default class BookmarkSelect extends Component {
   render () {
-    const { store } = this.props
+    const { store, from } = this.props
     const {
-      bookmarkGroups = [],
       listStyle,
-      openedCategoryIds
+      openedSideBar,
+      expandedKeys
     } = store
+    if (from === 'sidebar' && openedSideBar !== 'bookmarks') {
+      return null
+    }
     const onClickItem = (item) => {
       if (!store.pinned) {
-        store.storeAssign({
-          openedSideBar: ''
-        })
+        store.setOpenedSideBar('')
       }
       store.onSelectBookmark(item.id)
     }
     const base = {
       store,
-      bookmarks: [
-        ...(store.bookmarks || []),
-        ...sshConfigItems
-      ],
+      bookmarks: store.bookmarks || [],
       type: 'bookmarks',
       onClickItem,
       listStyle,
       staticList: true
     }
+    if (!store.config.hideSshConfig) {
+      base.bookmarks.push(...store.sshConfigItems)
+    }
     const propsTree = {
       ...base,
-      shouldComfirmDel: true,
-      bookmarkGroups: store.bookmarkGroupsTotal,
-      expandedKeys: openedCategoryIds,
-      onExpand: openedCategoryIds => {
-        store.storeAssign({
-          openedCategoryIds
-        })
-      }
+      shouldConfirmDel: true,
+      bookmarkGroups: store.getBookmarkGroupsTotal(),
+      expandedKeys
     }
-    const propsList = {
-      ...base,
-      bookmarks: undefined,
-      list: base.bookmarks || []
-    }
-    return bookmarkGroups.filter(d => d.level !== 2).length > 1
-      ? (
-        <TreeList
-          {...propsTree}
-        />
-      )
-      : (
-        <ItemList
-          {...propsList}
-        />
-      )
+    return (
+      <TreeList
+        {...propsTree}
+      />
+    )
   }
 }

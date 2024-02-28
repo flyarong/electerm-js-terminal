@@ -2,28 +2,26 @@
  * file section
  */
 
-import React from 'react'
+import { Component } from 'react'
 import runIdle from '../../common/run-idle'
 import {
   CloseOutlined,
-  CodeOutlined,
-  CopyOutlined,
-  EditOutlined,
   Loading3QuartersOutlined,
   BorderlessTableOutlined
 } from '@ant-design/icons'
-
+import generate from '../../common/uid'
 import { Tooltip, message } from 'antd'
 import classnames from 'classnames'
 import copy from 'json-deep-copy'
-import _ from 'lodash'
+import { isEqual, findIndex, some, pick } from 'lodash-es'
 import Input from '../common/input-auto-focus'
 import createName from '../../common/create-title'
 import { addClass, removeClass } from '../../common/class'
 import {
   terminalSshConfigType,
-  ctrlOrCmd
+  commonActions
 } from '../../common/constants'
+import { shortcutDescExtend } from '../shortcuts/shortcut-handler.js'
 
 const { prefix } = window
 const e = prefix('tabs')
@@ -31,7 +29,7 @@ const m = prefix('menu')
 const onDragCls = 'ondrag-tab'
 const onDragOverCls = 'dragover-tab'
 
-export default class Tab extends React.Component {
+class Tab extends Component {
   constructor (props) {
     super(props)
     this.state = {
@@ -46,7 +44,7 @@ export default class Tab extends React.Component {
   }
 
   componentDidUpdate (prevProps) {
-    if (!_.isEqual(prevProps.tab, this.props.tab)) {
+    if (!isEqual(prevProps.tab, this.props.tab)) {
       this.setState({
         tab: copy(this.props.tab)
       })
@@ -55,6 +53,7 @@ export default class Tab extends React.Component {
 
   componentWillUnmount () {
     window.removeEventListener('message', this.onEvent)
+    window.removeEventListener('message', this.onContextAction)
     clearTimeout(this.handler)
   }
 
@@ -88,6 +87,14 @@ export default class Tab extends React.Component {
     document.querySelectorAll('.' + onDragOverCls).forEach((d) => {
       removeClass(d, onDragOverCls)
     })
+  }
+
+  handleClick = (e) => {
+    const {
+      onChangeTabId
+    } = this.props
+    const { id } = this.state.tab
+    onChangeTabId(id)
   }
 
   onDrag = () => {
@@ -143,20 +150,21 @@ export default class Tab extends React.Component {
     }
     const { id } = fromTab
     const tabs = copy(this.props.tabs)
-    const indexFrom = _.findIndex(tabs, t => t.id === id)
-    let indexDrop = _.findIndex(tabs, t => t.id === dropId)
+    const indexFrom = findIndex(tabs, t => t.id === id)
+    let indexDrop = findIndex(tabs, t => t.id === dropId)
     if (indexDrop > indexFrom) {
       indexDrop = indexDrop - 1
     }
     tabs.splice(indexFrom, 1)
     tabs.splice(indexDrop, 0, fromTab)
-    this.props.store.storeAssign({
+    this.props.setTabs(
       tabs
-    })
+    )
+    window.store.focus()
   }
 
-  reloadTab = async () => {
-    this.props.store.reloadTab(this.state.tab)
+  handleReloadTab = async () => {
+    this.props.reloadTab(this.state.tab)
   }
 
   onDragEnd = e => {
@@ -165,15 +173,18 @@ export default class Tab extends React.Component {
     e && e.dataTransfer && e.dataTransfer.clearData()
   }
 
-  close = () => {
-    this.props.store.delTab({ id: this.state.tab.id })
-    if (this.props.tabs.length <= 1) {
-      setTimeout(this.props.store.addTab, 1)
-    }
+  handleClose = () => {
+    this.props.delTab(this.state.tab.id)
   }
 
-  dup = () => {
-    this.props.store.onDuplicateTab(this.props.tab)
+  handleDup = () => {
+    this.props.onDuplicateTab(
+      this.state.tab
+    )
+  }
+
+  newTab = () => {
+    this.props.addTab()
   }
 
   doRename = () => {
@@ -185,11 +196,11 @@ export default class Tab extends React.Component {
     })
   }
 
-  onBlur = () => {
+  handleBlur = () => {
     const tab = copy(this.state.tab)
     const { titleTemp, title, id, host } = tab
     if (!titleTemp && !host) {
-      return message.warn(e('titleEmptyWarn'))
+      return message.warning(e('titleEmptyWarn'))
     }
     delete tab.isEditting
     if (title === titleTemp) {
@@ -201,10 +212,10 @@ export default class Tab extends React.Component {
     this.setState({
       tab
     })
-    this.props.store.editTab(id, { title: titleTemp })
+    this.props.editTab(id, { title: titleTemp })
   }
 
-  onChange = e => {
+  handleChange = e => {
     const titleTemp = e.target.value
     const tab = copy(this.state.tab)
     tab.titleTemp = titleTemp
@@ -214,106 +225,109 @@ export default class Tab extends React.Component {
   }
 
   closeOther = () => {
-    this.props.store.storeAssign({
-      tabs: [this.props.tab],
-      currentTabId: this.props.tab.id
-    })
+    const { setTabs, onChangeTabId } = this.props
+    onChangeTabId(this.props.tab.id)
+    setTabs([this.props.tab])
   }
 
   closeTabsRight = () => {
-    let { tabs, tab, currentTabId } = this.props
-    const index = _.findIndex(tabs, t => t.id === tab.id)
+    const {
+      tab, currentTabId,
+      onChangeTabId,
+      setTabs
+    } = this.props
+    let tabs = copy(this.props.tabs)
+    const index = findIndex(tabs, t => t.id === tab.id)
     tabs = tabs.slice(0, index + 1)
-    const update = {
-      tabs
+    if (!some(tabs, t => t.id === currentTabId)) {
+      onChangeTabId(tabs[0].id)
     }
-    if (!_.some(tabs, t => t.id === currentTabId)) {
-      update.currentTabId = tabs[0].id
-    }
-    this.props.store.storeAssign(update)
+    setTabs(tabs)
   }
 
-  renderContext () {
+  renderContext = () => {
     const { tabs, tab } = this.props
     const len = tabs.length
-    const index = _.findIndex(tabs, t => t.id === tab.id)
-    const nother = len === 1
+    const index = findIndex(tabs, t => t.id === tab.id)
     const noRight = index >= len - 1
-    const cls = 'pd2x pd1y context-item pointer'
     const isSshConfig = tab.type === terminalSshConfigType
-    return (
-      <div>
-        <div
-          className={cls}
-          onClick={this.close}
-        >
-          <CloseOutlined /> {e('close')} ({ctrlOrCmd} + W)
-        </div>
-        {
-          nother
-            ? null
-            : (
-              <div
-                className={cls}
-                onClick={this.closeOther}
-              >
-                <CloseOutlined /> {e('closeOtherTabs')}
-              </div>
-            )
-        }
-        {
-          noRight
-            ? null
-            : (
-              <div
-                className={cls}
-                onClick={this.closeTabsRight}
-              >
-                <CloseOutlined /> {e('closeTabRight')}
-              </div>
-            )
-        }
-
-        <div
-          className={cls}
-          onClick={() => this.props.store.addTab()}
-        >
-          <CodeOutlined /> {e('newTab')}
-        </div>
-        <div
-          className={cls}
-          onClick={this.dup}
-        >
-          <CopyOutlined /> {e('duplicate')}
-        </div>
-        <div
-          className={cls + (isSshConfig ? ' disabled' : '')}
-          onClick={isSshConfig ? _.noop : this.doRename}
-        >
-          <EditOutlined /> {e('rename')}
-        </div>
-        <div
-          className={cls}
-          onClick={this.reloadTab}
-        >
-          <Loading3QuartersOutlined /> {m('reload')}
-        </div>
-      </div>
-    )
+    const res = []
+    const reloadShortcut = this.getShortcut('app_reloadCurrentTab')
+    res.push({
+      func: 'handleClose',
+      icon: 'CloseOutlined',
+      text: e('close')
+    })
+    res.push({
+      func: 'closeOther',
+      icon: 'CloseOutlined',
+      text: e('closeOtherTabs')
+    })
+    if (!noRight) {
+      res.push({
+        func: 'closeTabsRight',
+        icon: 'CloseOutlined',
+        text: e('closeTabRight')
+      })
+    }
+    res.push({
+      func: 'newTab',
+      icon: 'CodeOutlined',
+      text: e('newTab')
+    })
+    res.push({
+      func: 'handleDup',
+      icon: 'CopyOutlined',
+      text: e('duplicate')
+    })
+    res.push({
+      disabled: isSshConfig,
+      func: 'doRename',
+      icon: 'EditOutlined',
+      text: e('rename')
+    })
+    res.push({
+      func: 'handleReloadTab',
+      icon: 'Loading3QuartersOutlined',
+      text: m('reload'),
+      subText: reloadShortcut
+    })
+    return res
   }
 
-  onContextMenu = e => {
+  onContextAction = e => {
+    const {
+      action,
+      id,
+      args = [],
+      func
+    } = e.data || {}
+    if (
+      action !== commonActions.clickContextMenu ||
+      id !== this.uid ||
+      !this[func]
+    ) {
+      return false
+    }
+    window.removeEventListener('message', this.onContextAction)
+    this[func](...args)
+  }
+
+  handleContextMenu = e => {
     e.preventDefault()
     const { target } = e
     const rect = target.getBoundingClientRect()
-    const content = this.renderContext()
-    this.props.store.openContextMenu({
-      content,
+    const items = this.renderContext()
+    this.uid = generate()
+    window.store.openContextMenu({
+      items,
       pos: {
         left: rect.left,
         top: rect.top + 20
-      }
+      },
+      id: this.uid
     })
+    window.addEventListener('message', this.onContextAction)
   }
 
   renderEditting (tab, cls) {
@@ -324,26 +338,37 @@ export default class Tab extends React.Component {
       <div className={cls + ' pd1x'}>
         <Input
           value={titleTemp}
-          onChange={this.onChange}
-          onBlur={this.onBlur}
-          onPressEnter={this.onBlur}
+          onChange={this.handleChange}
+          onBlur={this.handleBlur}
+          onPressEnter={this.handleBlur}
         />
       </div>
     )
   }
 
+  renderCloseIcon () {
+    return (
+      <span className='tab-close pointer'>
+        <CloseOutlined onClick={this.handleClose} />
+      </span>
+    )
+  }
+
   render () {
     const {
-      currentTabId,
-      onChangeTabId,
-      onDuplicateTab
-    } = this.props.store
+      currentTabId
+    } = this.props
+    const { isLast } = this.props
     const { tab, terminalOnData } = this.state
     const { id, isEditting, status, isTransporting } = tab
     const active = id === currentTabId
     const cls = classnames(
+      `tab-${id}`,
       'tab',
       { active },
+      {
+        'tab-last': isLast
+      },
       status,
       {
         'is-terminal-active': terminalOnData
@@ -356,6 +381,10 @@ export default class Tab extends React.Component {
     if (isEditting) {
       return this.renderEditting(tab, cls)
     }
+    const { tabCount, color } = tab
+    const styleTag = color
+      ? { borderTop: `1px solid ${color}` }
+      : {}
     return (
       <Tooltip
         title={title}
@@ -366,7 +395,7 @@ export default class Tab extends React.Component {
           draggable
           id={'id' + id}
           data-id={id}
-          {..._.pick(this, [
+          {...pick(this, [
             'onDrag',
             'onDragEnter',
             'onDragExit',
@@ -379,24 +408,30 @@ export default class Tab extends React.Component {
         >
           <div
             className='tab-title elli pd1x'
-            onClick={() => onChangeTabId(id)}
-            onDoubleClick={() => onDuplicateTab(tab)}
-            onContextMenu={this.onContextMenu}
+            onClick={this.handleClick}
+            onDoubleClick={this.handleDup}
+            style={styleTag}
+            onContextMenu={this.handleContextMenu}
           >
             <Loading3QuartersOutlined
               className='pointer tab-reload mg1r'
-              onClick={this.reloadTab}
-              title={m('reload')} />
-            {title}
+              onClick={this.handleReloadTab}
+              title={m('reload')}
+            />
+            <span className='tab-title'>
+              {tabCount}. {title}
+            </span>
           </div>
           <div className={'tab-status ' + status} />
           <div className='tab-traffic' />
           <BorderlessTableOutlined className='tab-terminal-feed' />
-          <span className='tab-close pointer'>
-            <CloseOutlined onClick={this.close} />
-          </span>
+          {
+            this.renderCloseIcon()
+          }
         </div>
       </Tooltip>
     )
   }
 }
+
+export default shortcutDescExtend(Tab)

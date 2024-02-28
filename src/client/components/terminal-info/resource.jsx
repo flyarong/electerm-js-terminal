@@ -2,8 +2,9 @@
  * cpu/swap/mem general usage
  */
 
-import _ from 'lodash'
+import { isEmpty, isUndefined } from 'lodash-es'
 import { Progress } from 'antd'
+import parseInt10 from '../../common/parse-int10'
 
 function toNumber (n = '') {
   let f = 1
@@ -29,7 +30,7 @@ export default function TerminalInfoResource (props) {
     return null
   }
   function renderItem (obj) {
-    if (_.isEmpty(obj)) {
+    if (isEmpty(obj)) {
       return <div className='pd1b' key={obj.name}>NA</div>
     }
     const {
@@ -38,13 +39,13 @@ export default function TerminalInfoResource (props) {
       percent,
       name
     } = obj
-    const hasPercent = !_.isUndefined(percent)
+    const hasPercent = !isUndefined(percent)
     const p = hasPercent
       ? percent
       : computePercent(used, total) || 0
     const fmt = hasPercent
-      ? (p) => `${name}: ${p}%`
-      : (p) => `${name}: ${p}%(${used}/${total})`
+      ? (p) => `${name}: ${p || ''}%`
+      : (p) => `${name}: ${p || ''}%(${used || ''}/${total || ''})`
     return (
       <div className='pd1b' key={name}>
         <Progress
@@ -58,7 +59,7 @@ export default function TerminalInfoResource (props) {
   const data = [
     {
       name: 'cpu',
-      percent: parseInt(cpu)
+      percent: parseInt10(cpu)
     },
     {
       name: 'mem',

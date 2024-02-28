@@ -3,12 +3,14 @@
  */
 
 import { dbNames, update, getData, fetchInitData, insert, remove } from '../common/db'
-import initWatch from './watch'
+import parseInt10 from '../common/parse-int10'
 import { infoTabs, statusMap, defaultEnvLang } from '../common/constants'
 import fs from '../common/fs'
-import { nanoid as generate } from 'nanoid/non-secure'
-import defaultSettings from '../../app/common/default-setting'
+import generate from '../common/uid'
+import defaultSettings from '../common/default-setting'
 import encodes from '../components/bookmark-form/encodes'
+import runIdle from '../common/run-idle'
+import { initWsCommon } from '../common/fetch-from-server'
 
 function getHost (argv, opts) {
   const arr = argv
@@ -23,7 +25,7 @@ function getHost (argv, opts) {
       return {
         host: mt[2],
         username: user,
-        port: port ? parseInt(port, 10) : 22
+        port: port ? parseInt10(port) : 22
       }
     }
   }
@@ -54,9 +56,14 @@ export async function addTabFromCommandLine (store, opts) {
     status: statusMap.processing,
     id: generate(),
     encode: encodes[0],
-    enableSftp: true,
     envLang: defaultEnvLang,
+    enableSsh: !options.sftpOnly,
+    authType: 'password',
+    pane: 'terminal',
     term: defaultSettings.terminalType
+  }
+  if (options.setEnv) {
+    update.setEnv = options.setEnv
   }
   if (options.title) {
     update.title = options.title
@@ -64,8 +71,8 @@ export async function addTabFromCommandLine (store, opts) {
   if (options.user) {
     update.username = options.user
   }
-  if (options.port && parseInt(options.port, 10)) {
-    update.port = parseInt(options.port, 10)
+  if (options.port && parseInt10(options.port)) {
+    update.port = parseInt10(options.port)
   }
   Object.assign(conf, update)
   if (options.privateKeyPath) {
@@ -75,53 +82,117 @@ export async function addTabFromCommandLine (store, opts) {
   if (conf.username && conf.host) {
     store.addTab(conf)
   }
+  if (options && options.batchOp) {
+    window.store.runBatchOp(options.batchOp)
+  }
 }
 
-export default (store) => {
-  store.batchDbUpdate = async (updates) => {
-    for (const u of updates) {
-      await update(u.id, u.update, u.db, u.upsert)
-    }
+export default (Store) => {
+  Store.prototype.batchDbUpdate = async function (updates) {
+    runIdle(() => {
+      for (const u of updates) {
+        update(u.id, u.update, u.db, u.upsert)
+      }
+    })
   }
-  store.batchDbAdd = async (adds) => {
-    for (const u of adds) {
-      insert(u.db, u.obj)
-    }
+  Store.prototype.batchDbAdd = async function (adds) {
+    runIdle(() => {
+      for (const u of adds) {
+        insert(u.db, u.obj)
+      }
+    })
   }
-  store.batchDbDel = async (dels) => {
-    for (const u of dels) {
-      await remove(u.db, u.id)
-    }
+  Store.prototype.batchDbDel = async function (dels) {
+    runIdle(() => {
+      for (const u of dels) {
+        remove(u.db, u.id)
+      }
+    })
   }
-  store.openInitSessions = () => {
-    for (const s of store.config.onStartSessions || []) {
+  Store.prototype.openInitSessions = function () {
+    const { store } = window
+    const arr = store.config.onStartSessions || []
+    for (const s of arr) {
       store.onSelectBookmark(s)
     }
-    store.addTab()
-  }
-  store.initData = async () => {
-    await store.checkForDbUpgrade()
-    const ext = {}
-    for (const name of dbNames) {
-      ext[name] = await fetchInitData(name)
+    if (!arr.length && store.config.initDefaultTabOnStart) {
+      store.initFirstTab()
     }
-    ext.openedCategoryIds = await getData('openedCategoryIds') || ext.bookmarkGroups.map(b => b.id)
+    setTimeout(store.confirmLoad, 1300)
+    const { initTime, loadTime } = window.pre.runSync('getLoadTime')
+    if (loadTime) {
+      store.loadTime = loadTime
+    } else {
+      const finishLoadTime = Date.now()
+      store.loadTime = finishLoadTime - initTime
+      window.pre.runSync('setLoadTime', store.loadTime)
+    }
+  }
+  Store.prototype.fetchSshConfigItems = async function () {
+    const arr = await window.pre.runGlobalAsync('loadSshConfig')
+      .catch((err) => {
+        console.log('fetchSshConfigItems error', err)
+        return []
+      })
+    window.store._sshConfigItems = JSON.stringify(arr)
+  }
+  Store.prototype.confirmLoad = function () {
+    window.store.configLoaded = true
+  }
+  Store.prototype.initApp = async function () {
+    const { store } = window
+    const globs = window.et.globs || await window.pre.runGlobalAsync('init')
+    window.langMap = globs.langMap
+    store.installSrc = globs.installSrc
+    store.appPath = globs.appPath
+    store.exePath = globs.exePath
+    store.isPortable = globs.isPortable
+    store._config = JSON.stringify(
+      globs.config
+    )
+    store._langs = JSON.stringify(
+      globs.langs
+    )
+    store.zoom(store.config.zoom, false, true)
+    await initWsCommon()
+  }
+  Store.prototype.initData = async function () {
+    const { store } = window
+    await store.initApp()
+    const ext = {}
+    const all = dbNames.map(async name => {
+      const data = await fetchInitData(name)
+      return {
+        name,
+        data
+      }
+    })
+    await Promise.all(all)
+      .then(arr => {
+        for (const { name, data } of arr) {
+          ext['_' + name] = data
+        }
+      })
     ext.lastDataUpdateTime = await getData('lastDataUpdateTime') || 0
-    ext.configLoaded = true
     Object.assign(store, ext)
 
-    await store.checkDefaultTheme()
-    await store.initShortcuts()
-    await store.loadFontList()
+    store.checkDefaultTheme()
+    store.loadFontList()
+    store.fetchItermThemes()
     store.openInitSessions()
-    initWatch(store)
+    if (!store.config.hideSshConfig) {
+      store.fetchSshConfigItems()
+    }
     store.initCommandLine().catch(store.onError)
+    if (store.config.checkUpdateOnStart) {
+      store.onCheckUpdate(false)
+    }
   }
-  store.initCommandLine = async () => {
+  Store.prototype.initCommandLine = async function () {
     const opts = await window.pre.runGlobalAsync('initCommandLine')
-    addTabFromCommandLine(store, opts)
+    addTabFromCommandLine(window.store, opts)
   }
-  store.addTabFromCommandLine = (event, opts) => {
-    addTabFromCommandLine(store, opts)
+  Store.prototype.addTabFromCommandLine = (event, opts) => {
+    addTabFromCommandLine(window.store, opts)
   }
 }

@@ -1,11 +1,11 @@
-
 import { PureComponent } from 'react'
 import Confirms from './confirm-modal'
 import ConflictHandler from './transfer-conflict'
 import TransfersHandler from './transports-action'
 import deepCopy from 'json-deep-copy'
 import runIdle from '../../common/run-idle'
-import _ from 'lodash'
+import { commonActions } from '../../common/constants'
+import { pick } from 'lodash-es'
 
 export default class TransferEntry extends PureComponent {
   constructor (props) {
@@ -26,10 +26,18 @@ export default class TransferEntry extends PureComponent {
   }
 
   onAdd = e => {
-    if (!e || !e.data || e.data.sessionId !== this.props.sessionId) {
+    const {
+      sessionId,
+      list,
+      action
+    } = e?.data || {}
+    if (
+      action !== commonActions.addTransfer ||
+      sessionId !== this.props.sessionId
+    ) {
       return false
     }
-    this.addTransferList(e.data.list)
+    this.addTransferList(list)
   }
 
   modifier = (...args) => {
@@ -43,6 +51,7 @@ export default class TransferEntry extends PureComponent {
         ...transferList,
         ...list
       ]
+      window.store.setTransfers(transferList)
       return {
         transferList
       }
@@ -59,13 +68,13 @@ export default class TransferEntry extends PureComponent {
       modifier: this.modifier,
       addTransferList: this.addTransferList,
       transferToConfirm: this.state.transferToConfirm,
-      ..._.pick(this.props, [
+      ...pick(this.props, [
         'localList',
         'remoteList',
         'sftp',
         'sessionId',
-        'store',
-        'host'
+        'host',
+        'tab'
       ])
     }
     const prps3 = {
@@ -74,10 +83,9 @@ export default class TransferEntry extends PureComponent {
       pauseAll: this.state.pauseAll,
       localList: this.props.localListDebounce,
       remoteList: this.props.remoteListDebounce,
-      ..._.pick(this.props, [
+      ...pick(this.props, [
         'sftp',
         'config',
-        'store',
         'tab',
         'sessionId',
         'pid'

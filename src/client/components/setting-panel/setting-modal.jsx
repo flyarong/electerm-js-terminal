@@ -3,33 +3,28 @@
  */
 
 import { Component } from '../common/react-subx'
-import _ from 'lodash'
-import { Tabs, Col, Row } from 'antd'
-import Modal from './setting-wrap'
-import TerminalThemeForm from '../terminal-theme'
-import TerminalThemeList from '../terminal-theme/theme-list'
-import QuickCommandsList from '../quick-commands/quick-commands-list'
-import QuickCommandsForm from '../quick-commands/quick-commands-form'
-import QmTransport from '../quick-commands/quick-command-transport'
-import BookmarkForm from '../bookmark-form'
-import List from './list'
-import TreeList from './tree-list'
-import Setting from './setting'
-import SyncSetting from '../setting-sync/setting-sync'
-import { settingMap, settingSyncId } from '../../common/constants'
-import copy from 'json-deep-copy'
+import { pick } from 'lodash-es'
+import { Tabs } from 'antd'
+import SettingModal from './setting-wrap'
+import {
+  settingMap,
+  modals
+} from '../../common/constants'
+import TabBookmarks from './tab-bookmarks'
+import TabHistory from './tab-history'
+import TabQuickCommands from './tab-quick-commands'
+import TabSettings from './tab-settings'
+import TabThemes from './tab-themes'
 
 const { prefix } = window
 const m = prefix('common')
-const c = prefix('control')
 const t = prefix('terminalThemes')
 const q = prefix('quickCommands')
-const { TabPane } = Tabs
 
-export default class SettingModal extends Component {
+export default class SettingModalWrap extends Component {
   selectItem = (item) => {
     const { store } = this.props
-    store.storeAssign({ settingItem: item })
+    store.setSettingItem(item)
   }
 
   renderTabs () {
@@ -38,173 +33,133 @@ export default class SettingModal extends Component {
       settingMap.bookmarks,
       settingMap.terminalThemes
     ]
-    const { tab, settingItem, settingSidebarList } = store
+    const { settingTab, settingItem, settingSidebarList, bookmarkSelectMode } = store
     const props0 = {
       store,
       activeItemId: settingItem.id,
-      type: tab,
+      type: settingTab,
       onClickItem: this.selectItem,
-      shouldComfirmDel: tabsShouldConfirmDel.includes(tab),
+      shouldConfirmDel: tabsShouldConfirmDel.includes(settingTab),
       list: settingSidebarList
     }
     const formProps = {
       store,
       formData: settingItem,
-      type: tab,
-      hide: store.hideModal,
-      ..._.pick(store, [
+      type: settingTab,
+      hide: store.hideSettingModal,
+      ...pick(store, [
         'currentBookmarkGroupId',
         'config'
       ]),
-      bookmarkGroups: copy(store.bookmarkGroups),
-      bookmarks: copy(store.bookmarks),
-      serials: copy(store.serials),
+      bookmarkGroups: store.bookmarkGroups,
+      bookmarks: store.bookmarks,
+      serials: store.serials,
       loaddingSerials: store.loaddingSerials
     }
+    const treeProps = {
+      ...props0,
+      bookmarkSelectMode,
+      bookmarkGroups: store.bookmarkGroups,
+      bookmarks: store.bookmarks,
+      ...pick(store, [
+        'currentBookmarkGroupId',
+        'autofocustrigger',
+        'config'
+      ])
+    }
+    const items = [
+      {
+        key: settingMap.history,
+        label: m(settingMap.history),
+        children: null
+      },
+      {
+        key: settingMap.bookmarks,
+        label: m(settingMap.bookmarks),
+        children: null
+      },
+      {
+        key: settingMap.setting,
+        label: m(settingMap.setting),
+        children: null
+      },
+      {
+        key: settingMap.terminalThemes,
+        label: t('uiThemes'),
+        children: null
+      },
+      {
+        key: settingMap.quickCommands,
+        label: q(settingMap.quickCommands),
+        children: null
+      }
+    ]
     return (
-      <Tabs
-        activeKey={tab}
-        animated={false}
-        onChange={store.onChangeTab}
-        className='setting-tabs'
-      >
-        <TabPane
-          tab={m(settingMap.history)}
-          key={settingMap.history}
-          className='setting-tabs-history'
-        >
-          <Row>
-            <Col span={6}>
-              <List
-                {...props0}
-              />
-            </Col>
-            <Col span={18}>
-              {
-                settingItem.id
-                  ? (
-                    <BookmarkForm
-                      key={settingItem.id}
-                      {...formProps}
-                    />
-                  )
-                  : <div className='form-wrap pd2 aligncenter'>{c('notFoundContent')}</div>
-              }
-
-            </Col>
-          </Row>
-        </TabPane>
-        <TabPane
-          tab={m(settingMap.bookmarks)}
-          key={settingMap.bookmarks}
-          className='setting-tabs-bookmarks'
-        >
-          <Row>
-            <Col span={10}>
-              <div className='model-bookmark-tree-wrap'>
-                <TreeList
-                  {...props0}
-                  {..._.pick(store, [
-                    'bookmarkGroups',
-                    'currentBookmarkGroupId',
-                    'bookmarks',
-                    'autofocustrigger',
-                    'config'
-                  ])}
-                />
-              </div>
-            </Col>
-            <Col span={14}>
-              <BookmarkForm
-                key={settingItem.id}
-                {...formProps}
-              />
-            </Col>
-          </Row>
-        </TabPane>
-        <TabPane
-          tab={m(settingMap.setting)}
-          key={settingMap.setting}
-          className='setting-tabs-setting'
-        >
-          <Row>
-            <Col span={6}>
-              <List
-                {...props0}
-              />
-            </Col>
-            <Col span={18}>
-              {
-                settingItem.id === settingSyncId
-                  ? (
-                    <SyncSetting
-                      store={store}
-                      {...store.config.syncSetting}
-                      {..._.pick(store, [
-                        'autofocustrigger',
-                        'isSyncingSetting',
-                        'isSyncDownload',
-                        'isSyncUpload',
-                        'syncType'
-                      ])}
-                    />
-                  )
-                  : <Setting {...props0} config={store.config} />
-              }
-            </Col>
-          </Row>
-        </TabPane>
-        <TabPane
-          tab={t('uiThemes')}
-          key={settingMap.terminalThemes}
-          className='setting-tabs-terminal-themes'
-        >
-          <Row>
-            <Col span={6}>
-              <TerminalThemeList
-                {...props0}
-                theme={store.config.theme}
-              />
-            </Col>
-            <Col span={18}>
-              <TerminalThemeForm {...formProps} key={settingItem.id} />
-            </Col>
-          </Row>
-        </TabPane>
-        <TabPane
-          tab={q(settingMap.quickCommands)}
-          key={settingMap.quickCommands}
-          className='setting-tabs-quick-commands'
-        >
-          <Row>
-            <Col span={6}>
-              <QmTransport store={store} />
-              <QuickCommandsList
-                {...props0}
-                quickCommandId={store.quickCommandId}
-              />
-            </Col>
-            <Col span={18}>
-              <QuickCommandsForm
-                {...formProps}
-                quickCommandTags={store.quickCommandTags}
-                key={settingItem.id}
-              />
-            </Col>
-          </Row>
-        </TabPane>
-      </Tabs>
+      <div>
+        <Tabs
+          activeKey={settingTab}
+          animated={false}
+          items={items}
+          onChange={store.handleChangeSettingTab}
+          destroyInactiveTabPane
+          className='setting-tabs'
+        />
+        <TabHistory
+          listProps={props0}
+          settingItem={settingItem}
+          formProps={formProps}
+          settingTab={settingTab}
+        />
+        <TabQuickCommands
+          listProps={props0}
+          settingItem={settingItem}
+          formProps={formProps}
+          store={store}
+          settingTab={settingTab}
+        />
+        <TabBookmarks
+          treeProps={treeProps}
+          settingItem={settingItem}
+          formProps={formProps}
+          settingTab={settingTab}
+        />
+        <TabSettings
+          listProps={props0}
+          settingItem={settingItem}
+          settingTab={settingTab}
+          store={store}
+        />
+        <TabThemes
+          listProps={props0}
+          settingItem={settingItem}
+          formProps={formProps}
+          store={store}
+          settingTab={settingTab}
+        />
+      </div>
     )
   }
 
   render () {
+    const {
+      showModal,
+      hideSettingModal,
+      innerWidth,
+      useSystemTitleBar
+    } = this.props.store
+    const show = showModal === modals.setting
+    if (!show) {
+      return null
+    }
     return (
-      <Modal
-        onCancel={this.props.store.hideModal}
-        visible={this.props.store.showModal}
+      <SettingModal
+        onCancel={hideSettingModal}
+        visible={show}
+        useSystemTitleBar={useSystemTitleBar}
+        innerWidth={innerWidth}
       >
         {this.renderTabs()}
-      </Modal>
+      </SettingModal>
     )
   }
 }

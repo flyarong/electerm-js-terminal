@@ -1,6 +1,4 @@
-
 // dom class方法
-
 /**
  * add css class
  * @param elem
@@ -25,7 +23,9 @@ export function addClass (elem, ..._classes) {
  */
 export function hasClass (elem, clst) {
   let cls = elem.className || ''
-  if (!cls) return false
+  if (!cls || typeof cls !== 'string') {
+    return false
+  }
   cls = ' ' + cls.split(/\s+/).join(' ') + ' '
   const reg = new RegExp(' ' + clst + ' ')
   return reg.test(cls)
@@ -38,7 +38,9 @@ export function hasClass (elem, clst) {
  */
 export function removeClass (elem, ...classes) {
   let cls = elem.className || ''
-  if (!cls) return
+  if (!cls || typeof cls !== 'string') {
+    return
+  }
   cls = '  ' + cls.split(/\s+/).join('  ') + '  '
   const clst = classes.join(' ').split(/\s+/)
   const reg = new RegExp(' ' + clst.join(' | ') + ' ', 'g')

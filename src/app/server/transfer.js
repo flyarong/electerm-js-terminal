@@ -4,7 +4,7 @@
 
 const fs = require('original-fs')
 const _ = require('lodash')
-const log = require('../utils/log')
+const log = require('../common/log')
 
 function tryCreateBuffer (size) {
   try {
@@ -270,7 +270,7 @@ class Transfer {
       return this.onEnd()
     }
     ws && ws.s({
-      wid: 'transfer:err:' + id,
+      id: 'transfer:err:' + id,
       error: {
         message: err.message,
         stack: err.stack

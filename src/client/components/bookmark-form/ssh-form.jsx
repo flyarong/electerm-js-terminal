@@ -5,23 +5,21 @@ import { PureComponent } from 'react'
 import {
   message
 } from 'antd'
-import _ from 'lodash'
+import { findIndex, uniq, isEqual, pick } from 'lodash-es'
 import copy from 'json-deep-copy'
-import { nanoid as generate } from 'nanoid/non-secure'
+import generate from '../../common/uid'
 import {
   settingMap,
-  statusMap,
   defaultBookmarkGroupId,
   newBookmarkIdPrefix
 } from '../../common/constants'
-import isIp from '../../common/is-ip'
+import { isValidIP } from '../../common/is-ip'
+import runIdle from '../../common/run-idle'
 import getInitItem from '../../common/init-setting-item'
 import testCon from '../../common/test-connection'
 import FormUi from './ssh-form-ui'
 import findBookmarkGroupId from '../../common/find-bookmark-group-id'
-
-const { prefix } = window
-const e = prefix('form')
+import newTerm from '../../common/new-terminal'
 
 export default class BookmarkForm extends PureComponent {
   state = {
@@ -69,16 +67,16 @@ export default class BookmarkForm extends PureComponent {
   }
 
   onBlur = async (e) => {
-    const { value } = e.target
+    const value = e.target.value.trim()
     const { type } = this.props
     if (
       type !== settingMap.bookmarks ||
-      !value || /\s/.test(value) ||
-      isIp(value)
+      !value ||
+      isValidIP(value)
     ) {
       return
     }
-    const ip = await window.pre.lookup(value)
+    const ip = await window.pre.runGlobalAsync('lookup', value)
       .catch(err => {
         log.debug(err)
       })
@@ -101,12 +99,12 @@ export default class BookmarkForm extends PureComponent {
   }
 
   updateBookmarkGroups = (bookmarkGroups, bookmark, categoryId) => {
-    let index = _.findIndex(
+    let index = findIndex(
       bookmarkGroups,
       bg => bg.id === categoryId
     )
     if (index < 0) {
-      index = _.findIndex(
+      index = findIndex(
         bookmarkGroups,
         bg => bg.id === defaultBookmarkGroupId
       )
@@ -118,8 +116,8 @@ export default class BookmarkForm extends PureComponent {
     if (!bg.bookmarkIds.includes(bid)) {
       bg.bookmarkIds.unshift(bid)
     }
-    bg.bookmarkIds = _.uniq(bg.bookmarkIds)
-    if (!_.isEqual(bg.bookmarkIds, old)) {
+    bg.bookmarkIds = uniq(bg.bookmarkIds)
+    if (!isEqual(bg.bookmarkIds, old)) {
       updates.push({
         id: bg.id,
         db: 'bookmarkGroups',
@@ -136,7 +134,7 @@ export default class BookmarkForm extends PureComponent {
       bg.bookmarkIds = bg.bookmarkIds.filter(
         g => g !== bid
       )
-      if (!_.isEqual(bg.bookmarkIds, olde)) {
+      if (!isEqual(bg.bookmarkIds, olde)) {
         updates.push({
           id: bg.id,
           db: 'bookmarkGroups',
@@ -147,14 +145,21 @@ export default class BookmarkForm extends PureComponent {
       }
       return bg
     })
-    this.props.store.storeAssign({
-      bookmarkGroups
+    runIdle(() => {
+      this.props.store.setBookmarkGroups(
+        bookmarkGroups
+      )
     })
-    this.props.store.batchDbUpdate(updates)
+    runIdle(() => {
+      this.props.store.batchDbUpdate(updates)
+    })
     message.success('OK', 3)
   }
 
   submit = (evt, item, type = this.props.type) => {
+    if (item.host) {
+      item.host = item.host.trim()
+    }
     const obj = item
     const { addItem, editItem } = this.props.store
     const categoryId = obj.category
@@ -164,7 +169,9 @@ export default class BookmarkForm extends PureComponent {
     )
     if (type === settingMap.history) {
       obj.id = generate()
-      addItem(obj, settingMap.bookmarks)
+      runIdle(() => {
+        addItem(obj, settingMap.bookmarks)
+      })
       this.updateBookmarkGroups(
         bookmarkGroups,
         obj,
@@ -176,7 +183,9 @@ export default class BookmarkForm extends PureComponent {
     if (!obj.id.startsWith(newBookmarkIdPrefix)) {
       const tar = copy(obj)
       delete tar.id
-      editItem(obj.id, tar, settingMap.bookmarks)
+      runIdle(() => {
+        editItem(obj.id, tar, settingMap.bookmarks)
+      })
       this.updateBookmarkGroups(
         bookmarkGroups,
         obj,
@@ -188,9 +197,13 @@ export default class BookmarkForm extends PureComponent {
     } else {
       obj.id = generate()
       if (evt !== 'save' && evt !== 'saveAndCreateNew') {
-        addItem(obj, settingMap.history)
+        runIdle(() => {
+          addItem(obj, settingMap.history)
+        })
       }
-      addItem(obj, settingMap.bookmarks)
+      runIdle(() => {
+        addItem(obj, settingMap.bookmarks)
+      })
       this.updateBookmarkGroups(
         bookmarkGroups,
         obj,
@@ -207,10 +220,11 @@ export default class BookmarkForm extends PureComponent {
     settingItem = getInitItem([],
       settingMap.bookmarks)
   ) => {
+    const { store } = this.props
     this.props.store.storeAssign({
-      autofocustrigger: +new Date(),
-      settingItem
+      autofocustrigger: Date.now()
     })
+    store.setSettingItem(settingItem)
   }
 
   test = async (update) => {
@@ -271,17 +285,11 @@ export default class BookmarkForm extends PureComponent {
     this.handleSubmit('test', res, true)
   }
 
+  connect = (res) => {
+    this.handleSubmit('connect', res, false)
+  }
+
   handleSubmit = async (evt, res, isTest = false) => {
-    if (
-      res.proxy && (
-        (!res.proxy.proxyIp && res.proxy.proxyPort) ||
-        (!res.proxy.proxyPort && res.proxy.proxyIp)
-      )
-    ) {
-      return message.error(
-        `${e('proxyIp')} and ${e('proxyPort')} ${e('required')}`
-      )
-    }
     const obj = {
       ...this.props.formData,
       ...res
@@ -289,21 +297,20 @@ export default class BookmarkForm extends PureComponent {
     if (isTest) {
       return this.test(obj)
     }
-    evt && this.submit(evt, obj)
+    if (evt && evt !== 'connect') {
+      this.submit(evt, obj)
+    }
     if (evt !== 'save' && evt !== 'saveAndCreateNew') {
       this.props.store.addTab({
         ...copy(obj),
-        srcId: obj.id,
-        status: statusMap.processing,
-        id: generate()
+        ...newTerm(true, true)
       })
       this.props.hide()
     }
   }
 
-  beforeUpload = (file, form) => {
-    const privateKey = window.pre
-      .readFileSync(file.path).toString()
+  beforeUpload = async (file, form) => {
+    const privateKey = await window.fs.readFile(file.path)
     form.setFieldsValue({
       privateKey
     })
@@ -311,10 +318,11 @@ export default class BookmarkForm extends PureComponent {
   }
 
   getProps = () => {
-    const funcs = _.pick(this, [
+    const funcs = pick(this, [
       'beforeUpload',
       'handleFinish',
       'testConnection',
+      'connect',
       'save',
       'saveAndCreateNew',
       'onSelectProxy',

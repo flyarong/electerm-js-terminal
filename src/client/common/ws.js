@@ -2,7 +2,7 @@
  * ws function for sftp/file transfer communication
  */
 
-import { nanoid as generate } from 'nanoid/non-secure'
+import generate from './uid'
 import wait from './wait'
 import copy from 'json-deep-copy'
 
@@ -151,7 +151,7 @@ export default (type, id, sessionId = '', sftpId = '', persist) => {
         id,
         sessionId,
         sftpId,
-        window._config
+        window.store.config
       ]
     })
     onces[id] = {

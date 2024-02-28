@@ -4,10 +4,9 @@
 
 const GitHubOri = require('gist-wrapper').default
 const GiteeOri = require('gitee-client').default
-const log = require('../utils/log')
-const {
-  createAgent
-} = require('./download-upgrade')
+const customSync = require('electerm-sync')
+const log = require('../common/log')
+const { createProxyAgent } = require('../lib/proxy-agent')
 
 class Gitee extends GiteeOri {
   create (data, conf) {
@@ -27,32 +26,30 @@ class Gitee extends GiteeOri {
   }
 
   test (conf) {
-    return this.get(`/v5/gists?page=1&per_page=1`, conf)
+    return this.get('/v5/gists?page=1&per_page=1', conf)
   }
 }
 
 class GitHub extends GitHubOri {
   test (conf) {
-    return this.get(`/gists?page=1&per_page=1`, conf)
+    return this.get('/gists?page=1&per_page=1', conf)
   }
 }
 
 const dist = {
   gitee: Gitee,
-  github: GitHub
+  github: GitHub,
+  custom: customSync
 }
 
 async function doSync (type, func, args, token, proxy) {
   const inst = new dist[type](token)
-  const {
-    agent,
-    agentType
-  } = createAgent(proxy)
+  const agent = createProxyAgent(proxy)
   const conf = agent
     ? {
-      [agentType]: agent
-    }
-    : undefined
+        httpsAgent: agent
+      }
+    : {}
   return inst[func](...args, conf)
     .then(r => r.data)
     .catch(e => {

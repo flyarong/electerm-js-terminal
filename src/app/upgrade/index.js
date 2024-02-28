@@ -4,19 +4,16 @@
  * run every upgrade script one by one
  */
 
-const { packInfo, appPath } = require('../utils/app-props')
+const { packInfo } = require('../common/app-props')
 const { version: packVersion } = packInfo
 const { resolve } = require('path')
 const fs = require('fs')
-const log = require('../utils/log')
-const comapre = require('../common/version-compare')
+const log = require('../common/log')
+const compare = require('../common/version-compare')
 const { dbAction } = require('../lib/nedb')
 const _ = require('lodash')
 const initData = require('./init-nedb')
-const savePath = resolve(appPath, 'electerm-localstorage.json')
-const { existsSync } = require('fs')
 const { updateDBVersion } = require('./version-upgrade')
-const hasOldJSONDB = existsSync(savePath)
 const emptyVersion = '0.0.0'
 const versionQuery = {
   _id: 'version'
@@ -42,15 +39,15 @@ async function getUpgradeVersionList () {
   const list = fs.readdirSync(__dirname)
   return list.filter(f => {
     const vv = f.replace('.js', '').replace('v', '')
-    return /^v\d/.test(f) && comapre(vv, version) > 0 && comapre(vv, packVersion) <= 0
+    return /^v\d/.test(f) && compare(vv, version) > 0 && compare(vv, packVersion) <= 0
   }).sort((a, b) => {
-    return comapre(a, b)
+    return compare(a, b)
   })
 }
 async function versionShouldUpgrade () {
   const dbVersion = await getDBVersion()
   log.info('database version:', dbVersion)
-  return comapre(dbVersion, packVersion) < 0
+  return compare(dbVersion, packVersion) < 0
 }
 
 async function shouldUpgrade () {
@@ -60,7 +57,7 @@ async function shouldUpgrade () {
   }
   const dbVersion = await getDBVersion()
   log.info('dbVersion', dbVersion)
-  if (!hasOldJSONDB && dbVersion === emptyVersion) {
+  if (dbVersion === emptyVersion) {
     await initData()
     await updateDBVersion(packVersion)
     return false

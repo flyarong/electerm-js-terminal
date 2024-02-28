@@ -3,7 +3,7 @@
  * run functions in seprate process, avoid using electron.remote directly
  */
 
-const { Terminal: Sftp } = require('./session')
+const { Sftp } = require('./session-sftp')
 const {
   sftp,
   transfer,
@@ -12,7 +12,7 @@ const {
 } = require('./remote-common')
 const { Transfer } = require('./transfer')
 const fs = require('./fs')
-const log = require('../utils/log')
+const log = require('../common/log')
 const { Upgrade } = require('./download-upgrade')
 const fetch = require('./fetch')
 const sync = require('./sync')
@@ -20,7 +20,9 @@ const {
   createTerm,
   testTerm,
   resize,
-  runCmd
+  runCmd,
+  toggleTerminalLog,
+  toggleTerminalLogTimestamp
 } = require('./terminal-api')
 
 global.upgradeInsts = {}
@@ -61,6 +63,9 @@ function verify (req) {
   const { token: to } = req.query
   if (to !== tokenElecterm) {
     throw new Error('not valid request')
+  }
+  if (process.env.requireAuth === 'yes' && !global.authed) {
+    throw new Error('auth required')
   }
 }
 
@@ -197,6 +202,10 @@ const initWs = function (app) {
         testTerm(ws, msg)
       } else if (action === 'resize-terminal') {
         resize(ws, msg)
+      } else if (action === 'toggle-terminal-log') {
+        toggleTerminalLog(ws, msg)
+      } else if (action === 'toggle-terminal-log-timestamp') {
+        toggleTerminalLogTimestamp(ws, msg)
       } else if (action === 'run-cmd') {
         runCmd(ws, msg)
       }

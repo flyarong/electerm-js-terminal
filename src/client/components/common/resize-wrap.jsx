@@ -6,8 +6,9 @@
 import React from 'react'
 import PropTypes from 'prop-types'
 import classnames from 'classnames'
-import _ from 'lodash'
-import { nanoid as generate } from 'nanoid/non-secure'
+import { isNull, pick, isUndefined } from 'lodash-es'
+import parseInt10 from '../../common/parse-int10'
+import generate from '../../common/uid'
 import memoizeOne from 'memoize-one'
 import {
   terminalSplitDirectionMap,
@@ -52,7 +53,7 @@ export default class ResizeWrap extends React.Component {
     const next = dom.nextSibling
     const { direction } = this.props
     const { startPosition } = this
-    if (_.isNull(e.pageX)) {
+    if (isNull(e.pageX)) {
       return
     }
     const currentPosition = {
@@ -64,14 +65,14 @@ export default class ResizeWrap extends React.Component {
     const doms = [dom, prev, next]
     const styles = doms.map(d => {
       const { style } = d
-      const obj = _.pick(style, this.positionProps)
+      const obj = pick(style, this.positionProps)
       return Object.keys(obj).reduce((prev, k) => {
         const v = obj[k]
         return {
           ...prev,
-          [k]: _.isUndefined(v)
+          [k]: isUndefined(v)
             ? v
-            : parseInt(obj[k].replace('px', ''), 10)
+            : parseInt10(obj[k].replace('px', ''))
         }
       }, {})
     })
@@ -163,19 +164,20 @@ export default class ResizeWrap extends React.Component {
     const { left, top, width, height } = prevComponent.props
     const style = direction === terminalSplitDirectionMap.vertical
       ? {
-        left: 0,
-        right: 0,
-        zIndex,
-        top: top + height - 2
-      } : {
-        top: 0,
-        bottom: 0,
-        zIndex,
-        left: left + width - 2
-      }
+          left: 0,
+          right: 0,
+          zIndex,
+          top: top + height - 2
+        }
+      : {
+          top: 0,
+          bottom: 0,
+          zIndex,
+          left: left + width - 2
+        }
     const props = {
       style,
-      ..._.pick(this, [
+      ...pick(this, [
         'onDoubleClick',
         'onDrag',
         'onDragStart',

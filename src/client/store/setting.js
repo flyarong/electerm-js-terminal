@@ -2,157 +2,194 @@
  * setting modal
  */
 
-import _ from 'lodash'
-import { nanoid as generate } from 'nanoid/non-secure'
+import { find } from 'lodash-es'
+import {
+  message
+} from 'antd'
+import generate from '../common/uid'
 import copy from 'json-deep-copy'
 import {
   settingMap,
-  statusMap,
-  sshConfigItems,
-  settingCommonId
+  settingCommonId,
+  settingSyncId,
+  modals
 } from '../common/constants'
 import { buildNewTheme } from '../common/terminal-theme'
 import getInitItem from '../common/init-setting-item'
+import newTerm from '../common/new-terminal'
 
-const defaultStatus = statusMap.processing
+const { prefix } = window
+const m = prefix('menu')
 
-export default store => {
-  Object.assign(store, {
-    onEditHistory () {
-      store.storeAssign({
-        tab: settingMap.history,
-        settingItem: store.history[0] || getInitItem([], settingMap.history),
-        autofocustrigger: +new Date()
-      })
-      store.openModal()
-    },
-
-    openBookmarkEdit (item) {
-      store.storeAssign({
-        tab: settingMap.bookmarks,
-        settingItem: item,
-        autofocustrigger: +new Date()
-      })
-      store.openModal()
-    },
-
-    openQuickCommandsSetting () {
-      store.storeAssign({
-        tab: settingMap.quickCommands,
-        settingItem: getInitItem([], settingMap.quickCommands),
-        autofocustrigger: +new Date()
-      })
-      store.openModal()
-    },
-
-    onSelectHistory (id) {
-      const item = _.find(store.history, it => it.id === id)
-      store.addTab({
-        ...copy(item),
-        from: 'history',
-        srcId: item.id,
-        status: defaultStatus,
-        id: generate()
-      })
-    },
-
-    onSelectBookmark (id) {
-      const { history, bookmarks } = store
-      const item = copy(
-        _.find(bookmarks, it => it.id === id) ||
-        _.find(sshConfigItems, it => it.id === id)
-      )
-      if (!item) {
-        return
+export default Store => {
+  Store.prototype.setConfig = function (conf) {
+    const { store } = window
+    store._config = JSON.stringify(
+      {
+        ...store.config,
+        ...conf
       }
-      store.addTab({
-        ...item,
-        from: 'bookmarks',
-        srcId: item.id,
-        status: defaultStatus,
-        id: generate()
-      })
-      item.id = generate()
-      if (store.config.disableSshHistory) {
-        return
+    )
+  }
+  Store.prototype.setSftpSortSetting = function (conf) {
+    const { store } = window
+    const base = copy(store.sftpSortSetting)
+    store._sftpSortSetting = JSON.stringify(
+      {
+        ...base,
+        ...conf
       }
-      const existItem = _.find(history, j => {
-        const keysj = Object.keys(j)
-        const keysi = Object.keys(item)
-        return _.isEqual(
-          _.pick(item, _.without(keysi, 'id')),
-          _.pick(j, _.without(keysj, 'id'))
-        )
-      })
-      if (!existItem) {
-        store.addItem(item, settingMap.history)
-      } else {
-        const index = _.findIndex(history, f => f.id === existItem.id)
-        history.splice(index, 1)
-        history.unshift(existItem)
-      }
-    },
+    )
+  }
+  Store.prototype.handleEditHistory = function () {
+    const { store } = window
+    const all = store.history
+    store.storeAssign({
+      settingTab: settingMap.history,
+      autofocustrigger: Date.now()
+    })
+    store.setSettingItem(all[0] || getInitItem([], settingMap.history))
+    store.openSettingModal()
+  }
 
-    openSetting () {
-      if (
-        store.tab === settingMap.setting &&
-        _.get(store.settingItem, 'id') === settingCommonId
-      ) {
-        return store.hideModal()
-      }
-      store.storeAssign({
-        tab: settingMap.setting,
-        settingItem: getInitItem([], settingMap.setting)
-      })
-      store.openModal()
-    },
+  Store.prototype.openBookmarkEdit = function (item) {
+    const { store } = window
+    store.storeAssign({
+      settingTab: settingMap.bookmarks,
+      autofocustrigger: Date.now()
+    })
+    store.setSettingItem(item)
+    store.openSettingModal()
+  }
 
-    openSettingSync () {
-      if (
-        store.tab === settingMap.setting &&
-        _.get(store.settingItem, 'id') === store.setting[0].id
-      ) {
-        return store.hideModal()
-      }
-      store.storeAssign({
-        tab: settingMap.setting,
-        settingItem: copy(store.setting[0])
-      })
-      store.openModal()
-    },
+  Store.prototype.handleOpenQuickCommandsSetting = function () {
+    const { store } = window
+    store.storeAssign({
+      settingTab: settingMap.quickCommands,
+      autofocustrigger: Date.now()
+    })
+    store.setSettingItem(getInitItem([], settingMap.quickCommands))
+    store.openSettingModal()
+  }
 
-    openTerminalThemes () {
-      if (
-        store.tab === settingMap.terminalThemes &&
-        _.get(store.settingItem, 'id') === ''
-      ) {
-        return store.hideModal()
-      }
-      store.storeAssign({
-        tab: settingMap.terminalThemes,
-        settingItem: buildNewTheme(),
-        autofocustrigger: +new Date()
-      })
-      store.openModal()
-    },
+  Store.prototype.onSelectHistory = function (id) {
+    const { store } = window
+    const history = store.history
+    const item = find(history, it => it.id === id)
+    store.addTab({
+      ...copy(item),
+      from: 'history',
+      srcId: item.id,
+      ...newTerm(true, true)
+    })
+  }
 
-    openModal () {
-      store.showModal = true
-    },
-
-    hideModal () {
-      store.showModal = false
-      store.settingItem = {}
-      store.focus()
-    },
-
-    getItems (tab, props = store) {
-      return copy(props[tab]) || []
-    },
-
-    async loadFontList () {
-      const fonts = await window.pre.runGlobalAsync('loadFontList')
-      store.fonts = fonts
+  Store.prototype.onSelectBookmark = function (id) {
+    const { store } = window
+    const history = store.history
+    const bookmarks = store.bookmarks
+    const item = copy(
+      find(bookmarks, it => it.id === id) ||
+      find(store.sshConfigItems, it => it.id === id)
+    )
+    if (!item) {
+      return
     }
-  })
+    store.addTab({
+      ...item,
+      from: 'bookmarks',
+      srcId: item.id,
+      ...newTerm(true, true)
+    })
+    item.id = generate()
+    if (store.config.disableSshHistory) {
+      return
+    }
+    history.unshift(item)
+    store.setItems('history', history)
+  }
+
+  Store.prototype.openSetting = function () {
+    const { store } = window
+    if (
+      store.settingTab === settingMap.setting &&
+      store.settingItem.id === settingCommonId &&
+      store.showModal === modals.setting
+    ) {
+      return store.hideSettingModal()
+    }
+    store.storeAssign({
+      settingTab: settingMap.setting
+    })
+    store.setSettingItem(getInitItem([], settingMap.setting))
+    store.openSettingModal()
+  }
+
+  Store.prototype.openSettingSync = function () {
+    const { store } = window
+    if (
+      store.settingTab === settingMap.setting &&
+      store.settingItem.id === store.setting[0].id &&
+      store.showModal === modals.setting
+    ) {
+      return store.hideSettingModal()
+    }
+    store.storeAssign({
+      settingTab: settingMap.setting
+    })
+    store.setSettingItem(copy(store.setting.find(d => d.id === settingSyncId)))
+    store.openSettingModal()
+  }
+
+  Store.prototype.openTerminalThemes = function () {
+    const { store } = window
+    if (
+      store.settingTab === settingMap.terminalThemes &&
+      store.settingItem.id === ''
+    ) {
+      return store.hideSettingModal()
+    }
+    store.storeAssign({
+      settingTab: settingMap.terminalThemes,
+      autofocustrigger: Date.now()
+    })
+    store.setSettingItem(buildNewTheme())
+    store.openSettingModal()
+  }
+
+  Store.prototype.openSettingModal = function () {
+    const { store } = window
+    if (store.isSencondInstance) {
+      return message.warning(
+        m('sencondInstanceTip')
+      )
+    }
+    store.showModal = modals.setting
+  }
+
+  Store.prototype.hideSettingModal = function () {
+    const { store } = window
+    store.showModal = modals.hide
+    store.setSettingItem({})
+  }
+
+  Store.prototype.loadFontList = async function () {
+    const fonts = await window.pre.runGlobalAsync('loadFontList')
+      .catch(err => {
+        console.log('loadFontList error', err)
+        return []
+      })
+    window.store._fonts = JSON.stringify(fonts)
+  }
+
+  Store.prototype.handleChangeSettingTab = function (settingTab) {
+    const { store } = window
+    const arr = store.getItems(settingTab)
+    const item = getInitItem(arr, settingTab)
+    store.storeAssign({
+      autofocustrigger: Date.now(),
+      settingTab
+    })
+    store.setSettingItem(item)
+  }
 }

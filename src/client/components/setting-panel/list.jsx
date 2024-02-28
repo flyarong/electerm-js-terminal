@@ -2,12 +2,12 @@
  * history list
  */
 import React from 'react'
-import { CloseOutlined, EditOutlined } from '@ant-design/icons'
+import { CloseOutlined, EditOutlined, LoadingOutlined } from '@ant-design/icons'
 import { Popconfirm } from 'antd'
 import Search from '../common/search'
-import createName from '../../common/create-title'
+import createName, { createTitleTag } from '../../common/create-title'
 import classnames from 'classnames'
-import _ from 'lodash'
+import { noop } from 'lodash-es'
 import highlight from '../common/highlight'
 import { settingSyncId, settingCommonId } from '../../common/constants'
 import './list.styl'
@@ -20,11 +20,27 @@ const s = prefix('setting')
 export default class ItemList extends React.PureComponent {
   state = {
     keyword: '',
-    labels: []
+    ready: false,
+    labels: [],
+    page: 1,
+    pageSize: 10
   }
 
-  onChange = e => {
+  componentDidMount () {
+    this.timer = setTimeout(() => {
+      this.setState({
+        ready: true
+      })
+    }, 200)
+  }
+
+  componentWillUnmount () {
+    clearTimeout(this.timer)
+  }
+
+  handleChange = e => {
     this.setState({
+      page: 1,
       keyword: e.target.value
     })
   }
@@ -43,7 +59,7 @@ export default class ItemList extends React.PureComponent {
     return (
       <div className='pd1y'>
         <Search
-          onChange={this.onChange}
+          onChange={this.handleChange}
           value={this.state.keyword}
         />
       </div>
@@ -54,18 +70,19 @@ export default class ItemList extends React.PureComponent {
     if (!item.id || [settingSyncId, settingCommonId].includes(item.id) || item.id.startsWith('default')) {
       return null
     }
-    const { shouldComfirmDel } = this.props
+    const { shouldConfirmDel } = this.props
     const icon = (
       <CloseOutlined
         title={e('del')}
         className='pointer list-item-remove'
         onClick={
-          shouldComfirmDel
-            ? _.noop
+          shouldConfirmDel
+            ? noop
             : e => this.del(item, e)
-        } />
+        }
+      />
     )
-    if (shouldComfirmDel) {
+    if (shouldConfirmDel) {
       return (
         <Popconfirm
           title={e('del') + '?'}
@@ -85,6 +102,7 @@ export default class ItemList extends React.PureComponent {
     const { onClickItem, type, activeItemId } = this.props
     const { id } = item
     const title = createName(item)
+    const tag = createTitleTag(item)
     const cls = classnames(
       'item-list-unit',
       {
@@ -105,7 +123,9 @@ export default class ItemList extends React.PureComponent {
         <div
           title={title}
           className='elli pd1y pd2x list-item-title'
-        >{titleHighlight || s('new')}</div>
+        >
+          {tag}{titleHighlight || s('new')}
+        </div>
         {this.renderDelBtn(item)}
         {this.renderEditBtn(item, isGroup)}
       </div>
@@ -132,11 +152,20 @@ export default class ItemList extends React.PureComponent {
       <EditOutlined
         title={e('edit')}
         onClick={(e) => this.editItem(e, item, isGroup)}
-        className='pointer list-item-edit' />
+        className='pointer list-item-edit'
+      />
     )
   }
 
   render () {
+    const { ready } = this.state
+    if (!ready) {
+      return (
+        <div className='pd3 aligncenter'>
+          <LoadingOutlined />
+        </div>
+      )
+    }
     let {
       list = [],
       type,
@@ -145,6 +174,7 @@ export default class ItemList extends React.PureComponent {
     list = this.filter(list)
     return (
       <div className={`item-list item-type-${type}`}>
+        {this.renderTransport ? this.renderTransport() : null}
         {this.renderLabels ? this.renderLabels() : null}
         {this.renderSearch()}
         <div className='item-list-wrap' style={listStyle}>

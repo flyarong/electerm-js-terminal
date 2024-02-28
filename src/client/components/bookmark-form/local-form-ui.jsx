@@ -5,11 +5,9 @@
 import { useEffect } from 'react'
 import {
   Tabs,
-  InputNumber,
   Input,
   TreeSelect,
-  Form,
-  Switch
+  Form
 } from 'antd'
 import { formItemLayout } from '../../common/form-layout'
 import {
@@ -22,9 +20,11 @@ import useSubmit from './use-submit'
 import useUI from './use-ui'
 import useQm from './use-quick-commands'
 import copy from 'json-deep-copy'
-import _ from 'lodash'
+import { defaults } from 'lodash-es'
+import renderRunScripts from './render-delayed-scripts.jsx'
+import { ColorPickerItem } from './color-picker-item.jsx'
+import { getRandomDefaultColor } from '../../common/rand-hex-color.js'
 
-const { TabPane } = Tabs
 const FormItem = Form.Item
 const { prefix } = window
 const e = prefix('form')
@@ -58,14 +58,15 @@ export default function LocalFormUi (props) {
     : currentBookmarkGroupId
   let initialValues = copy(props.formData)
   const defaultValues = {
-    loginScriptDelay: 500,
-    enableSftp: true,
     category: initBookmarkGroupId,
     term: props.store.config.terminalType,
+    displayRaw: false,
     type: terminalLocalType,
+    color: getRandomDefaultColor(),
+    runScripts: [{}],
     enableSsh: true
   }
-  initialValues = _.defaults(initialValues, defaultValues)
+  initialValues = defaults(initialValues, defaultValues)
   function renderCommon () {
     const {
       bookmarkGroups = []
@@ -73,34 +74,15 @@ export default function LocalFormUi (props) {
     const tree = formatBookmarkGroups(bookmarkGroups)
     return (
       <div className='pd1x'>
-        <FormItem
-          {...formItemLayout}
-          label={e('loginScript')}
-          name='loginScript'
-          help={`* ${e('loginScriptTip')}`}
-        >
-          <Input.TextArea row={1} />
-        </FormItem>
-        <FormItem
-          {...formItemLayout}
-          name='loginScriptDelay'
-          label={e('loginScriptDelay')}
-        >
-          <InputNumber
-            placeholder='loginScriptDelay'
-            min={1}
-            max={65535}
-            step={1}
-            formatter={value => `${value} ms`}
-          />
-        </FormItem>
+        {renderRunScripts()}
         <FormItem
           {...formItemLayout}
           label={e('title')}
-          name='title'
           hasFeedback
         >
-          <Input />
+          <FormItem noStyle name='title'>
+            <Input addonBefore={<ColorPickerItem />} />
+          </FormItem>
         </FormItem>
         <FormItem
           {...formItemLayout}
@@ -123,15 +105,6 @@ export default function LocalFormUi (props) {
         </FormItem>
         <FormItem
           {...formItemLayout}
-          label='Sftp'
-          name='enableSftp'
-          valuePropName='checked'
-          className='hide'
-        >
-          <Switch />
-        </FormItem>
-        <FormItem
-          {...formItemLayout}
           label='type'
           name='type'
           className='hide'
@@ -143,18 +116,30 @@ export default function LocalFormUi (props) {
   }
 
   function renderTabs () {
+    const items = [
+      {
+        key: 'auth',
+        label: e('auth'),
+        forceRender: true,
+        children: renderCommon()
+      },
+      {
+        key: 'settings',
+        label: s('settings'),
+        forceRender: true,
+        children: uis
+      },
+      {
+        key: 'quickCommands',
+        forceRender: true,
+        label: e('quickCommands'),
+        children: qms
+      }
+    ]
     return (
-      <Tabs>
-        <TabPane tab={e('auth')} key='auth' forceRender>
-          {renderCommon()}
-        </TabPane>
-        <TabPane tab={s('settings')} key='settings' forceRender>
-          {uis}
-        </TabPane>
-        <TabPane tab={e('quickCommands')} key='quickCommands' forceRender>
-          {qms}
-        </TabPane>
-      </Tabs>
+      <Tabs
+        items={items}
+      />
     )
   }
 

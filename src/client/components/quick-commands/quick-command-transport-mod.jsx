@@ -1,13 +1,12 @@
 import BookmarkTransport from '../setting-panel/bookmark-transport'
 import download from '../../common/download'
-import time from '../../../app/common/time'
+import time from '../../common/time'
 import copy from 'json-deep-copy'
 
 export default class QmTransport extends BookmarkTransport {
-  beforeUpload = (file) => {
+  beforeUpload = async (file) => {
     const { store } = this.props
-    const txt = window.pre
-      .readFileSync(file.path).toString()
+    const txt = await window.fs.readFile(file.path)
     try {
       const quickCommands = JSON.parse(txt)
       const quickCommandsOld = copy(store.quickCommands)
@@ -39,7 +38,11 @@ export default class QmTransport extends BookmarkTransport {
     return false
   }
 
-  down = () => {
+  renderEdit () {
+    return null
+  }
+
+  handleDownload = () => {
     const { store } = this.props
     const {
       quickCommands

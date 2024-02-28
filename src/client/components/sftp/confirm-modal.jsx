@@ -4,12 +4,24 @@
  */
 
 import { Modal, Button } from 'antd'
+import { isString } from 'lodash-es'
 import AnimateText from '../common/animate-text'
-import formatTime from '../../../app/common/time'
+import formatTime from '../../common/time'
 import { FolderOutlined, FileOutlined } from '@ant-design/icons'
+import {
+  fileActions
+} from '../../common/constants'
+import postMessage from '../../common/post-msg'
 
 const { prefix } = window
 const e = prefix('sftp')
+
+function formatTimeAuto (strOrDigit) {
+  if (isString(strOrDigit)) {
+    return formatTime(strOrDigit)
+  }
+  return formatTime(strOrDigit * 1000)
+}
 
 export default (props) => {
   if (!props.transferToConfirm) {
@@ -38,7 +50,7 @@ export default (props) => {
     props.modifier({
       transferToConfirm: null
     })
-    window.postMessage({
+    postMessage({
       transferGroupId,
       fileId,
       id,
@@ -50,8 +62,8 @@ export default (props) => {
     const action = isDirectory ? e('merge') : e('replace')
     const typeTxt = isDirectory ? e('folder') : e('file')
     const Icon = isDirectory ? FolderOutlined : FileOutlined
-    const typeTitle = e(typeFrom)
-    const otherTypeTitle = e(typeTo)
+    const typeTitle = e(typeTo)
+    const otherTypeTitle = e(typeFrom)
     return (
       <div className='confirms-content-wrap'>
         <AnimateText>
@@ -62,7 +74,7 @@ export default (props) => {
             {typeTitle} {typeTxt}: <Icon className='mg1r' />{name}
           </p>
           <p className='font13'>
-            {e('size')}: {sizeTo}, {e('modifyTime')}: {formatTime(modifyTimeTo)}
+            {e('size')}: {sizeTo}, {e('modifyTime')}: {formatTimeAuto(modifyTimeTo)}
           </p>
           <p className='pd1b'>
             ({toPath})
@@ -74,7 +86,7 @@ export default (props) => {
             {otherTypeTitle} {typeTxt}: <Icon className='mg1r' />{name}
           </p>
           <p className='font13'>
-            {e('size')}: {sizeFrom}, {e('modifyTime')}: {formatTime(modifyTimeFrom)}
+            {e('size')}: {sizeFrom}, {e('modifyTime')}: {formatTimeAuto(modifyTimeFrom)}
           </p>
           <p className='pd1b'>
             ({fromPath})
@@ -87,24 +99,31 @@ export default (props) => {
     return (
       <div className='mgq1t pd1y alignright'>
         <Button
-          type='ghost'
+          type='dashed'
           className='mg1l'
-          onClick={() => act('cancel')}
+          onClick={() => act(fileActions.cancel)}
         >
           {e('cancel')}
         </Button>
         <Button
-          type='ghost'
+          type='dashed'
           className='mg1l'
-          onClick={() => act('skip')}
+          onClick={() => act(fileActions.skip)}
         >
           {e('skip')}
         </Button>
         <Button
-          type='primary'
+          type='dashed'
+          className='mg1l'
+          onClick={() => act(fileActions.skipAll)}
+        >
+          {e('skipAll')}
+        </Button>
+        <Button
+          danger
           className='mg1l'
           onClick={
-            () => act('mergeOrOverwrite')
+            () => act(fileActions.mergeOrOverwrite)
           }
         >
           {isDirectory ? e('merge') : e('overwrite')}
@@ -113,14 +132,15 @@ export default (props) => {
           type='primary'
           className='mg1l'
           onClick={
-            () => act('rename')
+            () => act(fileActions.rename)
           }
         >
           {e('rename')}
         </Button>
         <div className='pd1t'>
           <Button
-            type='ghost'
+            type='dashed'
+            danger
             className='mg1l'
             title={
               isDirectory
@@ -128,7 +148,7 @@ export default (props) => {
                 : e('overwriteDesc')
             }
             onClick={
-              () => act('mergeOrOverwriteAll')
+              () => act(fileActions.mergeOrOverwriteAll)
             }
           >
             {isDirectory ? e('mergeAll') : e('overwriteAll')}
@@ -138,7 +158,7 @@ export default (props) => {
             className='mg1l'
             title={e('renameDesc')}
             onClick={
-              () => act('renameAll')
+              () => act(fileActions.renameAll)
             }
           >
             {e('renameAll')}
@@ -148,11 +168,11 @@ export default (props) => {
     )
   }
   const modalProps = {
-    visible: true,
+    open: true,
     width: 500,
     title: e('fileConflict'),
     footer: renderFooter(),
-    onCancel: () => act('cancel')
+    onCancel: () => act(fileActions.cancel)
   }
   return (
     <Modal

@@ -2,35 +2,40 @@
  * init static state
  */
 
-// import newTerm from '../common/new-terminal'
-import copy from 'json-deep-copy'
 import {
   settingMap,
   defaultBookmarkGroupId,
-  sidebarWidth,
   newBookmarkIdPrefix,
+  fileOperationsMap,
   syncTypes,
-  settingSyncId,
-  sshConfigItems,
-  infoTabs
+  infoTabs,
+  openedSidebarKey,
+  sidebarPinnedKey,
+  sftpDefaultSortSettingKey,
+  batchInputLsKey,
+  expandedKeysLsKey,
+  checkedKeysLsKey,
+  localAddrBookmarkLsKey,
+  leftSidebarWidthKey,
+  rightSidebarWidthKey,
+  dismissDelKeyTipLsKey
 } from '../common/constants'
 import { buildDefaultThemes, buildNewTheme } from '../common/terminal-theme'
+import * as ls from '../common/safe-local-storage'
 
-const { _config } = window
 const { prefix } = window
 const t = prefix('terminalThemes')
-const e = prefix('control')
+const e = prefix('common')
 const newQuickCommand = 'newQuickCommand'
 const q = prefix('quickCommands')
-const ss = prefix('settingSync')
 
 function getDefaultBookmarkGroups (bookmarks) {
   return [
-    {
+    JSON.stringify({
       title: t(defaultBookmarkGroupId),
       id: defaultBookmarkGroupId,
       bookmarkIds: bookmarks.map(d => d.id)
-    }
+    })
   ]
 }
 
@@ -38,7 +43,7 @@ export const getInitItem = (arr, tab) => {
   if (tab === settingMap.history) {
     return arr[0] || {}
   } else if (tab === settingMap.bookmarks) {
-    return { id: newBookmarkIdPrefix + ':' + (+new Date()), title: '' }
+    return { id: newBookmarkIdPrefix + ':' + (Date.now()), title: '' }
   } else if (tab === settingMap.setting) {
     return { id: '', title: e('common') }
   } else if (tab === settingMap.terminalThemes) {
@@ -51,83 +56,138 @@ export const getInitItem = (arr, tab) => {
   }
 }
 
-const tabs = []
-const bookmarks = []
-const bookmarkGroups = getDefaultBookmarkGroups(bookmarks)
+export default () => {
+  return {
+    // common
+    wsInited: false,
+    configLoaded: false,
+    loadTime: 0,
+    lastDataUpdateTime: 0,
+    _tabs: '[]',
+    currentTabId: '',
+    termFocused: false,
+    _history: '[]',
+    _bookmarks: '[]',
+    _bookmarkGroups: JSON.stringify(
+      getDefaultBookmarkGroups([])
+    ),
+    _config: '{}',
+    _terminalThemes: JSON.stringify([
+      buildDefaultThemes()
+    ]),
+    _itermThemes: '[]',
+    currentBookmarkGroupId: defaultBookmarkGroupId,
+    _expandedKeys: ls.getItem(expandedKeysLsKey) || JSON.stringify([
+      defaultBookmarkGroupId
+    ]),
+    bookmarkSelectMode: false,
+    _checkedKeys: ls.getItem(checkedKeysLsKey) || '[]',
+    _addressBookmarks: '[]',
+    _addressBookmarksLocal: ls.getItem(localAddrBookmarkLsKey) || '[]',
 
-export default {
-  lastDataUpdateTime: 0,
-  tabs,
-  height: 500,
-  width: window.innerWidth - sidebarWidth,
-  currentTabId: '',
-  history: [],
-  quickCommands: [],
-  quickCommandId: '',
-  bookmarks,
-  bookmarkGroups,
-  setting: [
-    {
-      id: settingSyncId,
-      title: ss('settingSync')
-    }
-  ],
-  sshConfigItems,
-  isMaximized: window.pre.runSync('isMaximized'),
-  config: copy(_config) || {},
-  contextMenuProps: {},
-  transferHistory: [],
-  terminalThemes: [buildDefaultThemes()],
-  contextMenuVisible: false,
-  fileInfoModalProps: {},
-  fileModeModalProps: {},
-  currentBookmarkGroupId: defaultBookmarkGroupId,
-  transferHistoryModalVisible: false,
-  selectedSessions: [],
-  sessionModalVisible: false,
-  textEditorProps: {},
-  textEditorSystemProps: {},
-  settingItem: getInitItem([], settingMap.bookmarks),
+    // init session control
+    selectedSessions: [],
+    sessionModalVisible: false,
 
-  // for settings related
-  tab: settingMap.bookmarks, // setting tab
-  autofocustrigger: +new Date(),
-  bookmarkId: undefined,
-  showModal: false,
-  activeTerminalId: '',
+    // sftp
+    fileOperation: fileOperationsMap.cp, // cp or mv
+    transferTab: 'transfer',
+    _transferHistory: '[]',
+    _fileTransfers: '[]',
+    _sftpSortSetting: ls.getItem(sftpDefaultSortSettingKey) || JSON.stringify({
+      local: {
+        prop: 'modifyTime',
+        direction: 'asc'
+      },
+      remote: {
+        prop: 'modifyTime',
+        direction: 'desc'
+      }
+    }),
 
-  // setting sync related
-  isSyncingSetting: false,
-  isSyncUpload: false,
-  isSyncDownload: false,
-  syncSetting: {},
-  syncType: syncTypes.github,
-  fonts: [],
+    // for settings related
+    _setting: '',
+    _settingItem: JSON.stringify(getInitItem([], settingMap.bookmarks)),
+    settingTab: settingMap.bookmarks, // setting tab
+    autofocustrigger: Date.now(),
+    bookmarkId: undefined,
+    showModal: 0,
+    activeTerminalId: '',
 
-  // sidebar
-  openedSideBar: '',
-  openedCategoryIds: [],
-  menuOpened: false,
-  pinned: false,
+    // setting sync related
+    isSyncingSetting: false,
+    isSyncUpload: false,
+    isSyncDownload: false,
+    syncSetting: {},
+    syncType: syncTypes.github,
+    _fonts: '[]',
 
-  // info/help modal
-  showInfoModal: false,
-  infoModalTab: infoTabs.info,
-  commandLineHelp: '',
+    // term search
+    termSearchOpen: false,
+    termSearch: '',
+    termSearchMatchCount: 0,
+    termSearchMatchIndex: 0,
+    _termSearchOptions: JSON.stringify({
+      caseSensitive: false,
+      wholeWord: false,
+      regex: false,
+      decorations: {
+        activeMatchColorOverviewRuler: 'yellow'
+      }
+    }),
 
-  // update
-  upgradeInfo: {},
+    // quick commands
+    _quickCommands: '[]',
+    quickCommandId: '',
+    openQuickCommandBar: false,
+    pinnedQuickCommandBar: false,
 
-  // serial list related
-  serials: [],
-  loaddingSerials: false,
+    // sidebar
+    openedSideBar: ls.getItem(openedSidebarKey),
+    leftSidebarWidth: parseInt(ls.getItem(leftSidebarWidthKey), 10) || 300,
+    rightSidebarWidth: parseInt(ls.getItem(rightSidebarWidthKey), 10) || 500,
+    menuOpened: false,
+    pinned: ls.getItem(sidebarPinnedKey) === 'true',
 
-  // transfer list
-  transports: [],
+    // info/help modal
+    showInfoModal: false,
+    infoModalTab: infoTabs.info,
+    commandLineHelp: '',
 
-  // batch inputs
-  batchInputs: [],
+    // editor
+    showEditor: false,
 
-  // ui
-  terminalFullScreen: false
+    // file/info modal
+    showFileModal: false,
+
+    // update
+    _upgradeInfo: '{}',
+
+    // serial list related
+    _serials: '[]',
+    loaddingSerials: false,
+
+    // transfer list
+    transports: [],
+
+    _sshConfigItems: '[]',
+
+    appPath: '',
+    exePath: '',
+    isPortable: false,
+    installSrc: '',
+
+    _langs: '[]',
+
+    // batch inputs
+    batchInputs: ls.getItemJSON(batchInputLsKey, []),
+
+    // ui
+    innerWidth: window.innerWidth,
+    height: 500,
+    isMaximized: window.pre.runSync('isMaximized'),
+    terminalFullScreen: false,
+    hideDelKeyTip: ls.getItem(dismissDelKeyTipLsKey) === 'y',
+    tabsHeight: 36
+  }
 }

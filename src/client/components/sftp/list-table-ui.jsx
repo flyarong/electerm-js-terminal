@@ -8,20 +8,25 @@
 
 import React from 'react'
 import classnames from 'classnames'
-import _ from 'lodash'
-import { nanoid as generate } from 'nanoid/non-secure'
+import { isEqual, pick, find, isNull, isArray, isUndefined } from 'lodash-es'
+import generate from '../../common/uid'
+import parseInt10 from '../../common/parse-int10'
 import {
   splitDraggerWidth,
   filePropMinWidth,
   maxDragMove,
   sftpControlHeight,
   eventTypes,
-  paneMap
+  paneMap,
+  commonActions
 } from '../../common/constants'
 import copy from 'json-deep-copy'
-import { CheckOutlined } from '@ant-design/icons'
 import FileSection from './file-item'
 import PagedList from './paged-list'
+import {
+  DownOutlined,
+  UpOutlined
+} from '@ant-design/icons'
 
 const { prefix } = window
 const e = prefix('sftp')
@@ -42,7 +47,7 @@ export default class FileListTable extends React.Component {
       return
     }
     if (
-      !_.isEqual(prevState.properties, this.state.properties) ||
+      !isEqual(prevState.properties, this.state.properties) ||
       (
         this.toVisible(prevProps, this.props) &&
         !this.inited
@@ -56,6 +61,7 @@ export default class FileListTable extends React.Component {
   }
 
   componentWillUnmount () {
+    window.removeEventListener('message', this.onContextAction)
     window.removeEventListener('message', this.onMsg)
   }
 
@@ -92,7 +98,7 @@ export default class FileListTable extends React.Component {
         style: {
           width: w + 'px',
           left: (w * i) + 'px',
-          zIndex: 3 + i
+          zIndex: 3 + i * 2
         }
       }
     })
@@ -108,7 +114,8 @@ export default class FileListTable extends React.Component {
           nextProp: properties[i + 1].name,
           style: {
             left: (w * (i + 1) - (splitDraggerWidth / 2)) + 'px',
-            width: splitDraggerWidth + 'px'
+            width: splitDraggerWidth + 'px',
+            zIndex: 4 + i * 2
           }
         }
       ]
@@ -137,7 +144,8 @@ export default class FileListTable extends React.Component {
       'owner',
       'group',
       'mode',
-      'path'
+      'path',
+      'ext'
     ]
   }
 
@@ -159,7 +167,7 @@ export default class FileListTable extends React.Component {
     return (
       <div
         className='sftp-file-table-header relative'
-        onContextMenu={this.onContextMenu}
+        onContextMenu={this.handleContextMenu}
       >
         {
           arr.map(this.renderHeaderItem)
@@ -192,16 +200,19 @@ export default class FileListTable extends React.Component {
       isSorting ? sortDirection : ''
     )
     const props = isHandle
-      ? _.pick(this, [
+      ? pick(this, [
         'onDoubleClick',
         'onDrag',
         'onDragStart',
         'onDragEnd'
       ])
       : {
-        onClick: this.onClickName
-      }
+          onClick: this.onClickName
+        }
     const text = e(name || '')
+    const directionIcon = isSorting
+      ? (sortDirection === 'asc' ? <DownOutlined /> : <UpOutlined />)
+      : null
     return (
       <div
         className={cls}
@@ -212,7 +223,7 @@ export default class FileListTable extends React.Component {
         {...props}
         title={text}
       >
-        {text}
+        {directionIcon} {text}
       </div>
     )
   }
@@ -233,26 +244,47 @@ export default class FileListTable extends React.Component {
       : [...names, name]
     const props = all.filter(g => newProps.includes(g))
     const update = this.initFromProps(props)
-    this.setState(update, this.onContextMenu)
+    this.setState(update)
   }
 
-  onContextMenu = e => {
+  onContextAction = e => {
+    const {
+      action,
+      id,
+      args = [],
+      func
+    } = e.data || {}
+    if (
+      action !== commonActions.clickContextMenu ||
+      id !== this.uid ||
+      !this[func]
+    ) {
+      return false
+    }
+    window.removeEventListener('message', this.onContextAction)
+    this[func](...args)
+  }
+
+  handleContextMenu = e => {
     e && e.preventDefault()
-    const content = this.renderContext()
+    const items = this.renderContext()
     const pos = e
       ? this.computePos(e)
       : this.pos
     this.pos = pos
-    this.props.store.openContextMenu({
-      content,
+    this.uid = generate()
+    window.store.openContextMenu({
+      id: this.uid,
+      items,
       pos
     })
+    window.addEventListener('message', this.onContextAction)
   }
 
   onClickName = (e) => {
     const id = e.target.getAttribute('id')
     const { properties } = this.state
-    const propObj = _.find(
+    const propObj = find(
       properties,
       p => p.id === id
     )
@@ -265,6 +297,13 @@ export default class FileListTable extends React.Component {
       ? this.otherDirection(sortDirection)
       : this.props.defaultDirection()
     const { type } = this.props
+    window.store.setSftpSortSetting({
+      [type]: {
+        direction: sortDirectionNew,
+        prop: name
+      }
+    })
+
     this.props.modifier({
       [`sortDirection.${type}`]: sortDirectionNew,
       [`sortProp.${type}`]: name
@@ -272,42 +311,26 @@ export default class FileListTable extends React.Component {
   }
 
   renderContext = () => {
-    const clsBase = 'pd2x pd1y context-item pointer'
     const { properties } = this.state
     const all = this.getPropsAll()
     const selectedNames = properties.map(d => d.name)
-    return (
-      <div>
-        {
-          all.map((p, i) => {
-            const selected = selectedNames.includes(p)
-            const disabled = !i
-            const cls = classnames(
-              clsBase,
-              { selected },
-              { unselected: !selected },
-              { disabled }
-            )
-            const onClick = disabled
-              ? _.noop
-              : this.onToggleProp
-            return (
-              <div
-                className={cls}
-                onClick={() => onClick(p)}
-              >
-                {
-                  disabled || selected
-                    ? <CheckOutlined className='mg1r' />
-                    : <span className='icon-holder mg1r' />
-                }
-                {e(p)}
-              </div>
-            )
-          })
-        }
-      </div>
-    )
+    return all.map((p, i) => {
+      const selected = selectedNames.includes(p)
+      const disabled = !i
+      const cls = classnames(
+        { selected },
+        { unselected: !selected }
+      )
+      return {
+        func: 'onToggleProp',
+        icon: disabled || selected ? 'CheckOutlined' : 'IconHolder',
+        text: e(p),
+        disabled,
+        args: [p],
+        noCloseMenu: true,
+        className: cls
+      }
+    })
   }
 
   positionProps = [
@@ -326,12 +349,12 @@ export default class FileListTable extends React.Component {
       `#id-${id} .tw-${type} .sftp-table`
     ).clientWidth
     this.oldStyles = ids.reduce((prev, { id, name }) => {
-      const sel = `.ssh-wrap-show .tw-${type} .sftp-file-table-header .shi-${name || id}`
+      const sel = `.session-current .tw-${type} .sftp-file-table-header .shi-${name || id}`
       return {
         ...prev,
         [name || id]: {
-          style: _.pick(
-            _.get(document.querySelector(sel), 'style') || {},
+          style: pick(
+            document.querySelector(sel)?.style || {},
             this.positionProps
           ),
           parentWidth
@@ -341,14 +364,14 @@ export default class FileListTable extends React.Component {
   }
 
   onDrag = (e) => {
-    if (_.isNull(e.pageX)) {
+    if (isNull(e.pageX)) {
       return
     }
     const dom = e.target
     const { splitHandles } = this.state
     const { type } = this.props
     const id = dom.getAttribute('id')
-    const splitHandle = _.find(
+    const splitHandle = find(
       splitHandles,
       s => s.id === id
     )
@@ -356,8 +379,8 @@ export default class FileListTable extends React.Component {
       prevProp,
       nextProp
     } = splitHandle
-    const selPrev = `.ssh-wrap-show .tw-${type} .shi-${prevProp}`
-    const selNext = `.ssh-wrap-show .tw-${type} .shi-${nextProp}`
+    const selPrev = `.session-current .tw-${type} .shi-${prevProp}`
+    const selNext = `.session-current .tw-${type} .shi-${nextProp}`
     const prev = Array.from(document.querySelectorAll(selPrev))
     const next = Array.from(document.querySelectorAll(selNext))
     const { startPosition } = this
@@ -368,17 +391,17 @@ export default class FileListTable extends React.Component {
     const types = ['dom', 'prev', 'next']
     const doms = [dom, prev, next]
     const styles = doms.map(d => {
-      const dd = _.isArray(d) ? d[0] : d
+      const dd = isArray(d) ? d[0] : d
       const { style } = dd
       const rect = dd.getBoundingClientRect()
-      const obj = _.pick(style, this.positionProps)
+      const obj = pick(style, this.positionProps)
       const res = Object.keys(obj).reduce((prev, k) => {
         const v = obj[k]
         return {
           ...prev,
-          [k]: _.isUndefined(v)
+          [k]: isUndefined(v)
             ? v
-            : parseInt(obj[k].replace('px', ''), 10)
+            : parseInt10(obj[k].replace('px', ''))
         }
       }, {})
       res.width = rect.right - rect.left
@@ -469,7 +492,7 @@ export default class FileListTable extends React.Component {
     ]
     const { type } = this.props
     ids.forEach(({ id, name }) => {
-      const sel = `.ssh-wrap-show .tw-${type} .shi-${name || id}`
+      const sel = `.session-current .tw-${type} .shi-${name || id}`
       const arr = Array.from(
         document.querySelectorAll(sel)
       )

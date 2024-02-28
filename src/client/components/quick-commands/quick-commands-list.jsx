@@ -4,10 +4,10 @@
 
 import List from '../setting-panel/list'
 import { PlusOutlined } from '@ant-design/icons'
-import { Select, Tooltip } from 'antd'
+import { Select } from 'antd'
 import classnames from 'classnames'
 import highlight from '../common/highlight'
-import { settingMap } from '../../common/constants'
+import QmTransport from './quick-command-transport'
 
 const { Option } = Select
 const { prefix } = window
@@ -16,7 +16,7 @@ const q = prefix('quickCommands')
 export default class QuickCommandsList extends List {
   del = (item, e) => {
     e.stopPropagation()
-    this.props.store.delItem(item, settingMap.quickCommands)
+    this.props.store.delQuickCommand(item)
   }
 
   onClickItem = (item) => {
@@ -34,6 +34,9 @@ export default class QuickCommandsList extends List {
   }
 
   renderItem = (item, i) => {
+    if (!item) {
+      return null
+    }
     const { activeItemId } = this.props
     const { name, id } = item
     const cls = classnames(
@@ -53,21 +56,24 @@ export default class QuickCommandsList extends List {
         className={cls}
         onClick={() => this.onClickItem(item)}
       >
-        <Tooltip
-          title={name}
-          placement='topLeft'
-        >
-          <div className='elli pd1y pd2x'>
-            {
-              !id
-                ? <PlusOutlined className='mg1r' />
-                : null
-            }
-            {title}
-          </div>
-        </Tooltip>
+        <div className='elli pd1y pd2x' title={name}>
+          {
+            !id
+              ? <PlusOutlined className='mg1r' />
+              : null
+          }
+          {title}
+        </div>
         {this.renderDelBtn(item)}
       </div>
+    )
+  }
+
+  renderTransport = () => {
+    return (
+      <QmTransport
+        store={this.props.store}
+      />
     )
   }
 
@@ -116,7 +122,6 @@ export default class QuickCommandsList extends List {
       : list
     return labels.length
       ? f.filter(d => {
-        console.log('dd', d, labels)
         return labels.some(label => {
           return (d.labels || []).includes(label)
         })
